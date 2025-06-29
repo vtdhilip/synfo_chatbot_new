@@ -1,32 +1,19 @@
 
 import React from 'react';
 import { X, ShoppingBag, Globe } from 'lucide-react';
+import { Client , initialFormData} from '../pages/Index';
 
-interface Client {
-  _id?: string;
-  name: string;
-  instagramId: string;
-  metaToken: string;
-  platform: 'SHOPIFY' | 'WOOCOMMERCE';
-  shopifyStore?: string;
-  shopifyToken?: string;
-  woocommerceSiteUrl?: string;
-  woocommerceConsumerKey?: string;
-  woocommerceConsumerSecret?: string;
-  subscriptionStatus: 'active' | 'inactive';
-}
+
 
 interface ClientModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (e: React.FormEvent) => void;
-  clientData: Client;
+  clientData: typeof initialFormData; 
   onInputChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
   editingClient: Client | null;
   loading: boolean;
-}
-
-const ClientModal = ({
+}const ClientModal = ({
   isOpen,
   onClose,
   onSubmit,
@@ -78,8 +65,8 @@ const ClientModal = ({
               </label>
               <input
                 type="text"
-                name="name"
-                value={clientData.name}
+                name="clientName"
+                value={clientData.clientName}
                 onChange={onInputChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
                 required
@@ -93,8 +80,8 @@ const ClientModal = ({
               </label>
               <input
                 type="text"
-                name="instagramId"
-                value={clientData.instagramId}
+                name="instagramPageId"
+                value={clientData.instagramPageId}
                 onChange={onInputChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
                 required
@@ -108,8 +95,8 @@ const ClientModal = ({
               </label>
               <input
                 type="text"
-                name="metaToken"
-                value={clientData.metaToken}
+                name="metaPageToken"
+                value={clientData.metaPageToken}
                 onChange={onInputChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
                 required
@@ -170,8 +157,8 @@ const ClientModal = ({
                   </label>
                   <input
                     type="text"
-                    name="shopifyStore"
-                    value={clientData.shopifyStore || ''}
+                    name="shopifyStoreName"
+                    value={clientData.shopifyStoreName || ''}
                     onChange={onInputChange}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
                     placeholder="https://yourstore.myshopify.com"
@@ -183,8 +170,8 @@ const ClientModal = ({
                   </label>
                   <input
                     type="text"
-                    name="shopifyToken"
-                    value={clientData.shopifyToken || ''}
+                    name="shopifyAccessToken"
+                    value={clientData.shopifyAccessToken || ''}
                     onChange={onInputChange}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
                     placeholder="Enter Shopify access token"

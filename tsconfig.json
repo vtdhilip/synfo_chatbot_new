@@ -26,6 +26,5 @@
       "@/*": ["./src/*"] // This maps @/ to the src directory
     }
   },
-  "include": ["src"], // Include all files in the src directory
-  "references": [{ "path": "./tsconfig.node.json" }] // Reference other tsconfig files
+  "include": ["src", "postcss.config.js"] // Include all files in the src directo // Reference other tsconfig files
 }

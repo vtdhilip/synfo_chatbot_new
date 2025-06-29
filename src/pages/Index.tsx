@@ -1,38 +1,38 @@
-
 import React, { useState, useEffect } from "react";
-import axios from "axios";
+import { collection, getDocs, addDoc, doc, setDoc, deleteDoc, query, where } from "firebase/firestore";
+import { db } from '../firebase';
+import { useAuth } from '../context/AuthContext';
 import AdminHeader from "@/components/AdminHeader";
 import ClientTable from "@/components/ClientTable";
 import ClientModal from "@/components/ClientModal";
 import MessageAlert from "@/components/MessageAlert";
 import { generateFacebookAuthLink } from '../utils/facebookAuth';
 
-// Use Vite's env variable for API URL, fallback to localhost if not set
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api/clients";
-
-interface Client {
-  _id: string;
-
-  name: string;
-  instagramId: string;
-  metaToken: string;
+// This is the single source of truth for the Client data type.
+export interface Client {
+  id: string; // The Firestore document ID
+  clientName: string;
+  instagramPageId: string;
+  metaPageToken: string;
   platform: 'SHOPIFY' | 'WOOCOMMERCE';
-  shopifyStore?: string;
-  shopifyToken?: string;
+  shopifyStoreName?: string;
+  shopifyAccessToken?: string;
   woocommerceSiteUrl?: string;
   woocommerceConsumerKey?: string;
   woocommerceConsumerSecret?: string;
   subscriptionStatus: 'active' | 'inactive';
-  createdAt: string;
+  agencyId: string;
+  agencyName: string;
 }
 
-const initialClientData: Omit<Client, '_id' | 'createdAt'> = {
-  name: "",
-  instagramId: "",
-  metaToken: "",
+// This is the initial state for the form, using camelCase.
+export const initialFormData: Omit<Client, 'id' | 'agencyId' | 'agencyName'> = {
+  clientName: "",
+  instagramPageId: "",
+  metaPageToken: "",
   platform: "SHOPIFY",
-  shopifyStore: "",
-  shopifyToken: "",
+  shopifyStoreName: "",
+  shopifyAccessToken: "",
   woocommerceSiteUrl: "",
   woocommerceConsumerKey: "",
   woocommerceConsumerSecret: "",
@@ -41,144 +41,130 @@ const initialClientData: Omit<Client, '_id' | 'createdAt'> = {
 
 const Index = () => {
   const [clients, setClients] = useState<Client[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState("all");
+  const [loading, setLoading] = useState(true);
+  const { currentUser, userRole, agencyName } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
-  const [clientData, setClientData] = useState(initialClientData);
-  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState(initialFormData);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<'success' | 'error' | 'info'>('info');
-
-  useEffect(() => {
-    fetchClients();
-  }, []);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterStatus, setFilterStatus] = useState("all");
 
   const fetchClients = async () => {
+    if (!currentUser) return;
     setLoading(true);
     try {
-      const res = await axios.get(API_URL);
-      setClients(res.data);
+      const clientsCollectionRef = collection(db, "clients");
+      const q = userRole === 'admin' 
+        ? query(clientsCollectionRef) 
+        : query(clientsCollectionRef, where("agencyId", "==", currentUser.uid));
+      
+      const querySnapshot = await getDocs(q);
+      const clientsData = querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as Client[];
+      setClients(clientsData);
     } catch (err) {
-      showMessage("Failed to fetch clients. Please check your API connection.", "error");
-      console.error("Fetch clients error:", err);
+      showMessage("Failed to fetch clients.", "error");
     }
     setLoading(false);
   };
 
-  const showMessage = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
-    setMessage(msg);
-    setMessageType(type);
-  };
-  const handleGetAuthLink = (client: Client) => {
-    try {
-      const authLink = generateFacebookAuthLink(client.instagramId, client._id);
-      
-      // Copy to clipboard
-      navigator.clipboard.writeText(authLink).then(() => {
-        showMessage(`Authentication link copied to clipboard for ${client.name}!`, "success");
-      }).catch(() => {
-        // Fallback: open in new tab
-        window.open(authLink, '_blank');
-        showMessage(`Authentication link opened in new tab for ${client.name}!`, "info");
-      });
-    } catch (error) {
-      showMessage("Failed to generate authentication link. Please try again.", "error");
-      console.error("Generate auth link error:", error);
-    }
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setClientData((prev) => ({ ...prev, [name]: value }));
-  };
+  useEffect(() => {
+    if (currentUser) { fetchClients(); }
+  }, [currentUser, userRole]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentUser) return showMessage("You must be logged in.", "error");
+    if (!formData.clientName || !formData.instagramPageId) return showMessage("Client Name and Instagram ID are required.", "error");
+
     setLoading(true);
-    setMessage("");
+    const clientData = {
+      ...formData,
+      agencyId: currentUser.uid,
+      agencyName: userRole === 'admin' ? 'Admin' : agencyName || 'Agency',
+    };
+
     try {
       if (editingClient) {
-        await axios.put(`${API_URL}/${editingClient._id}`, clientData);
+        const clientDocRef = doc(db, 'clients', editingClient.id);
+        await setDoc(clientDocRef, clientData, { merge: true });
         showMessage("Client updated successfully!", "success");
       } else {
-        await axios.post(`${API_URL}/add`, clientData);
+        await addDoc(collection(db, 'clients'), clientData);
         showMessage("Client added successfully!", "success");
       }
       closeModal();
       fetchClients();
     } catch (err) {
-      showMessage("Error saving client. Please try again.", "error");
-      console.error("Save client error:", err);
+      showMessage("Error saving client.", "error");
     }
     setLoading(false);
   };
 
-  const openEditModal = (client: Client) => {
-    setClientData({
-      name: client.name || "",
-      instagramId: client.instagramId || "",
-      metaToken: client.metaToken || "",
-      platform: client.platform || "SHOPIFY",
-      shopifyStore: client.shopifyStore || "",
-      shopifyToken: client.shopifyToken || "",
-      woocommerceSiteUrl: client.woocommerceSiteUrl || "",
-      woocommerceConsumerKey: client.woocommerceConsumerKey || "",
-      woocommerceConsumerSecret: client.woocommerceConsumerSecret || "",
-      subscriptionStatus: client.subscriptionStatus || "active",
-    });
-    setEditingClient(client);
-    setIsModalOpen(true);
-    setMessage("");
+  const deleteClient = async (clientId: string) => {
+    if (!window.confirm("Are you sure?")) return;
+    setLoading(true);
+    try {
+      await deleteDoc(doc(db, 'clients', clientId));
+      showMessage("Client deleted successfully.", "success");
+      fetchClients();
+    } catch (err) {
+      showMessage("Error deleting client.", "error");
+    }
+    setLoading(false);
   };
 
-  const openAddModal = () => {
-    setClientData(initialClientData);
-    setEditingClient(null);
-    setIsModalOpen(true);
-    setMessage("");
+  const toggleStatus = async (client: Client) => {
+    setLoading(true);
+    const newStatus = client.subscriptionStatus === 'active' ? 'inactive' : 'active';
+    try {
+      const clientDocRef = doc(db, 'clients', client.id);
+      await setDoc(clientDocRef, { subscriptionStatus: newStatus }, { merge: true });
+      fetchClients();
+    } catch (err) {
+      showMessage("Error updating status.", "error");
+    }
+    setLoading(false);
+  };
+  
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingClient(null);
-    setMessage("");
+    setFormData(initialFormData);
   };
 
-  const deleteClient = async (id: string) => {
-    if (window.confirm("Are you sure you want to delete this client? This action cannot be undone.")) {
-      setLoading(true);
-      try {
-        await axios.delete(`${API_URL}/${id}`);
-        showMessage("Client deleted successfully.", "success");
-        fetchClients();
-      } catch (err) {
-        showMessage("Error deleting client. Please try again.", "error");
-        console.error("Delete client error:", err);
-      }
-      setLoading(false);
-    }
+  const openEditModal = (client: Client) => {
+    setEditingClient(client);
+    setFormData(client);
+    setIsModalOpen(true);
   };
 
-  const toggleStatus = async (client: Client) => {
-    setLoading(true);
-    try {
-      await axios.put(`${API_URL}/${client._id}`, {
-        ...client,
-        subscriptionStatus: client.subscriptionStatus === "active" ? "inactive" : "active",
-      });
-      fetchClients();
-      showMessage(`Client status updated to ${client.subscriptionStatus === "active" ? "inactive" : "active"}.`, "success");
-    } catch (err) {
-      showMessage("Error updating client status. Please try again.", "error");
-      console.error("Toggle status error:", err);
-    }
-    setLoading(false);
+  const openAddModal = () => {
+    setEditingClient(null);
+    setFormData(initialFormData);
+    setIsModalOpen(true);
+  };
+  
+  const showMessage = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setMessage(msg);
+    setMessageType(type);
+  };
+
+  const handleGetAuthLink = (client: Client) => { 
+    const authLink = generateFacebookAuthLink(client.instagramPageId, client.id);
+    navigator.clipboard.writeText(authLink).then(() => {
+        showMessage(`Auth link copied for ${client.clientName}!`, "success");
+    });
   };
 
   const filteredClients = clients.filter((client) => {
     return (
-      client.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
+      (client.clientName?.toLowerCase().includes(searchTerm.toLowerCase()) ?? true) &&
       (filterStatus === "all" || client.subscriptionStatus === filterStatus)
     );
   });
@@ -193,15 +179,7 @@ const Index = () => {
           setFilterStatus={setFilterStatus}
           onAddClient={openAddModal}
         />
-        
-        {message && (
-          <MessageAlert
-            message={message}
-            type={messageType}
-            onClose={() => setMessage("")}
-          />
-        )}
-        
+        {message && <MessageAlert message={message} type={messageType} onClose={() => setMessage("")} />}
         <ClientTable
           clients={filteredClients}
           loading={loading}
@@ -210,12 +188,11 @@ const Index = () => {
           onToggleStatus={toggleStatus}
           onGetAuthLink={handleGetAuthLink}
         />
-        
         <ClientModal
           isOpen={isModalOpen}
           onClose={closeModal}
           onSubmit={handleSubmit}
-          clientData={clientData}
+          clientData={formData}
           onInputChange={handleInputChange}
           editingClient={editingClient}
           loading={loading}
