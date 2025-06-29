@@ -1,5 +1,4 @@
 
-import React from 'react';
 import { Edit, Trash2, ShoppingBag, Globe, Link } from 'lucide-react';
 
 interface Client {

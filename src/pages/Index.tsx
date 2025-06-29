@@ -5,13 +5,14 @@ import AdminHeader from "@/components/AdminHeader";
 import ClientTable from "@/components/ClientTable";
 import ClientModal from "@/components/ClientModal";
 import MessageAlert from "@/components/MessageAlert";
-import { generateFacebookAuthLink, exchangeCodeForToken } from '../utils/facebookAuth';
+import { generateFacebookAuthLink } from '../utils/facebookAuth';
 
 // Use Vite's env variable for API URL, fallback to localhost if not set
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api/clients";
 
 interface Client {
   _id: string;
+
   name: string;
   instagramId: string;
   metaToken: string;
