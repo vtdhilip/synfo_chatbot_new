@@ -141,12 +141,14 @@ const ClientTable: React.FC<ClientTableProps> = ({ clients, loading, onEdit, onD
                     >
                       <Edit className="w-4 h-4" />
                     </button>
+                     {userRole === 'admin' && (
                     <button
                       onClick={() => onDelete(client.id)}
                       className="text-red-600 hover:text-red-900 p-2 hover:bg-red-50 rounded-lg transition-colors duration-200"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
+                     )}
                   </div>
                 </td>
               </tr>
