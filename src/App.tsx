@@ -2,8 +2,12 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import LoginPage from "./pages/LoginPage";
 import ProtectedRoute from "./components/ProtectedRoute";
-import Layout from "./components/Layout"; // <-- 1. Import Layout
+import Layout from "./components/Layout";
+import AgenciesPage from "./pages/AgenciesPage";
+import AdminRoute from "./components/AdminRoute";
 import NotFound from "./pages/NotFound";
+import AgencyClientsPage from "./pages/AgencyClientsPage";
+
 
 const App = () => (
   <BrowserRouter>
@@ -12,7 +16,7 @@ const App = () => (
       <Route path="/login" element={<LoginPage />} />
 
       {/* Protected routes wrapped by the Layout */}
-      <Route 
+      <Route
         element={
           <ProtectedRoute>
             <Layout />
@@ -20,8 +24,26 @@ const App = () => (
         }
       >
         <Route path="/" element={<Index />} />
-        {/* You can add other protected pages here, like /settings */}
+
+
+
+        <Route
+          path="/agencies"
+          element={
+            <AdminRoute>
+              <AgenciesPage />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/agency/:agencyId/clients"
+          element={<AdminRoute> <AgencyClientsPage /> </AdminRoute>}
+        />
+
       </Route>
+
+      {/* You can add other protected pages here, like /settings */}
+
 
       <Route path="*" element={<NotFound />} />
     </Routes>

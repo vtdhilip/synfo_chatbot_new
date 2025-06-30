@@ -1,9 +1,8 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore'; 
-import { auth, db } from '../firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../firebase'; // Your firebase config file
 
-// Define the shape of our custom user data from Firestore
 interface CustomUserData {
   role: 'admin' | 'agency';
   agencyName?: string;
@@ -12,7 +11,7 @@ interface CustomUserData {
 interface AuthContextType {
   currentUser: User | null;
   userRole: 'admin' | 'agency' | null;
-  agencyName: string | null; // <-- New: The agency's name
+  agencyName: string | null;
   loading: boolean;
 }
 
@@ -25,7 +24,7 @@ export const useAuth = () => {
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userRole, setUserRole] = useState<'admin' | 'agency' | null>(null);
-  const [agencyName, setAgencyName] = useState<string | null>(null); // <-- New
+  const [agencyName, setAgencyName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -37,14 +36,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (userDocSnap.exists()) {
           const customData = userDocSnap.data() as CustomUserData;
           setUserRole(customData.role);
-          setAgencyName(customData.agencyName || null); // <-- New
+          setAgencyName(customData.agencyName || null);
         } else {
           setUserRole(null);
-          setAgencyName(null); // <-- New
+          setAgencyName(null);
         }
       } else {
         setUserRole(null);
-        setAgencyName(null); // <-- New
+        setAgencyName(null);
       }
       setLoading(false);
     });
@@ -52,12 +51,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return unsubscribe;
   }, []);
 
-  const value = {
-    currentUser,
-    userRole,
-    agencyName, // <-- New
-    loading
-  };
+  const value = { currentUser, userRole, agencyName, loading };
 
   return (
     <AuthContext.Provider value={value}>

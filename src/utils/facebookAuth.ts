@@ -17,28 +17,18 @@ const FACEBOOK_APP_SECRET = import.meta.env.VITE_FACEBOOK_APP_SECRET || 'your_fa
  * @param clientId The unique ID of the client in your system.
  * @returns The full Facebook OAuth URL.
  */
-export const generateFacebookAuthLink = (instagramId: string, clientId: string): string => {
-  // The redirect_uri must match exactly what you configured in your Facebook App settings.
-  // It should be a URL on your domain that will handle the OAuth callback.
-  const redirectUri = `${window.location.origin}/auth/callback`;
 
-  // The 'state' parameter is used for security to prevent CSRF attacks.
-  // It typically contains data needed after the redirect, encoded to prevent tampering.
-  const state = btoa(JSON.stringify({ clientId, instagramId }));
+export const generateFacebookAuthLink = (instagramPageId: string, clientId: string): string => {
+  const appId = import.meta.env.VITE_FACEBOOK_APP_ID;
+  // This must EXACTLY match the URL in your Facebook App settings and your Cloud Function
+  const redirectUri = `${window.location.origin}/auth/callback`; 
+  
+  // Encode the client's database ID and their Instagram ID into the state
+  const state = btoa(JSON.stringify({ clientId, instagramPageId }));
+  
+  const scope = "pages_show_list,instagram_basic,instagram_manage_messages,pages_read_engagement";
 
-  const params = new URLSearchParams({
-    client_id: FACEBOOK_APP_ID,
-    redirect_uri: redirectUri,
-    // Define the scopes (permissions) your app needs.
-    // 'instagram_basic' for basic profile.
-    // 'instagram_content_publish' for publishing.
-    // 'pages_show_list' and 'pages_read_engagement' if you need to manage pages associated with Instagram.
-    scope: 'instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement',
-    response_type: 'code', // We are requesting an authorization code
-    state: state
-  });
-
-  return `https://www.facebook.com/v18.0/dialog/oauth?${params.toString()}`;
+  return `https://www.facebook.com/v19.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&state=${state}&scope=${scope}&response_type=code`;
 };
 
 /**

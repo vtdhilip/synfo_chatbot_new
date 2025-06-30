@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { Link, useNavigate } from 'react-router-dom'; // Import Link
 import { signOut } from 'firebase/auth';
 import { auth } from '../firebase';
@@ -43,7 +43,7 @@ const GlobalHeader = () => {
 
   return (
     <header style={styles.header}>
-      <div style={styles.siteTitle}>Synaptic Info</div>
+      <Link to="/" style={styles.siteTitle}>Synaptic Info</Link>
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
         {/* --- THIS IS THE CONDITIONAL LINK --- */}
         {userRole === 'admin' && (
