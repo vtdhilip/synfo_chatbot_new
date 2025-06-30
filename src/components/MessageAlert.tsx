@@ -1,5 +1,4 @@
 
-import React from 'react';
 import { CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 
 interface MessageAlertProps {
