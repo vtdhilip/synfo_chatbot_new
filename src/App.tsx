@@ -7,14 +7,14 @@ import AgenciesPage from "./pages/AgenciesPage";
 import AdminRoute from "./components/AdminRoute";
 import NotFound from "./pages/NotFound";
 import AgencyClientsPage from "./pages/AgencyClientsPage";
-
+import AuthCallback from './components/AuthCallback';
 
 const App = () => (
   <BrowserRouter>
     <Routes>
       {/* Public routes */}
       <Route path="/login" element={<LoginPage />} />
-
+<Route path="/auth/callback" element={<AuthCallback />} />
       {/* Protected routes wrapped by the Layout */}
       <Route
         element={
