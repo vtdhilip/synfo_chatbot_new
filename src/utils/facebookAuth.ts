@@ -1,12 +1,32 @@
-export const generateFacebookAuthLink = (instagramPageId: string, clientId: string): string => {
-  const appId = 740006708601685;
-  // This must EXACTLY match the URL in your Facebook App settings and your Cloud Function
-  const redirectUri = `${window.location.origin}/auth/callback`; 
 
-  // Encode the client's database ID and their Instagram ID into the state
-  const state = btoa(JSON.stringify({ clientId, instagramPageId }));
+export const generateFacebookAuthLink = (state: string): string => {
+  // Use your real App ID
+  const client_id = "740006708601685";
+  
+  const redirect_uri = "https://admin.synapticinfo.com/facebook/callback";
+  const scope = [
+    'pages_show_list',
 
-  const scope = "pages_show_list,instagram_basic,instagram_manage_messages,pages_read_engagement";
+'pages_messaging',
 
-  return `https://www.facebook.com/v19.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&state=${state}&scope=${scope}&response_type=code`;
+'instagram_basic',
+
+'instagram_manage_messages',
+
+'instagram_manage_comments',
+
+'business_management',
+
+'instagram_content_publish'
+  ].join(',');
+  const params = new URLSearchParams({
+    client_id,
+    redirect_uri,
+    scope,
+    response_type: 'code',
+    state,
+  });
+
+  // Use the main facebook.com dialog URL for all business connections
+  return `https://www.facebook.com/v20.0/dialog/oauth?${params.toString()}`;
 };

@@ -1,62 +1,51 @@
 import { useEffect, useState } from 'react';
-import { useLocation } from 'react-router-dom';
-import { getFunctions, httpsCallable, HttpsCallableResult } from 'firebase/functions';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 const AuthCallback = () => {
-  const [message, setMessage] = useState('Initializing...');
-  const location = useLocation();
+  const [message, setMessage] = useState('Processing authentication...');
 
   useEffect(() => {
-    // --- TRACER LOG 1 ---
-    // This tells us the component has loaded.
-    console.log("AuthCallback component has rendered.");
-    setMessage('Reading authentication parameters from URL...');
-
-    const params = new URLSearchParams(location.search);
+    // Get parameters from the URL
+    const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
     const state = params.get('state');
+    
+    // Get the state we saved before opening the popup
+    const savedState = localStorage.getItem("oauth_state");
 
-    // --- TRACER LOG 2 ---
-    // This tells us what was found in the URL.
-    console.log("URL Parameters found:", { code, state });
-
-    if (code && state) {
-      setMessage('Authorization code received. Contacting server...');
+    // Security check: ensure the state parameter matches to prevent CSRF attacks
+    if (code && state && state === savedState) {
+      localStorage.removeItem("oauth_state"); // Clean up state after use
       
-      // --- TRACER LOG 3 ---
-      // This confirms we are about to call the backend.
-      console.log("Preparing to call 'exchangeCode' Firebase Function...");
-
+      console.log("✅ Security check passed. Calling backend function...");
+      
       const functions = getFunctions();
-      const exchangeCodeFunction = httpsCallable(functions, 'exchangeCode');
+      const connectAndCreate = httpsCallable(functions, 'connectAndCreateAccount');
 
-      exchangeCodeFunction({ code, state })
-        .then((result: HttpsCallableResult) => {
-          // --- TRACER LOG 4 ---
-          // This confirms the backend call was successful.
-          console.log("Firebase Function call SUCCEEDED!", result.data);
-
-          setMessage('Success! Your account is connected. This window will close shortly.');
-          setTimeout(() => window.close(), 3000); // Increased timeout slightly
+      // Send the temporary code to the backend
+      connectAndCreate({ code })
+        .then(() => {
+          setMessage('Success! Your account has been connected. This window will now close.');
+          setTimeout(() => window.close(), 3000); // Close the popup
         })
         .catch((err) => {
-          // --- TRACER LOG 5 ---
-          // This tells us the backend call FAILED.
-          console.error("Firebase Function call FAILED:", err);
-          setMessage(`Error: Could not connect account. ${err.message}. Check the browser console for more details.`);
+          setMessage(`Error connecting account: ${err.message}`);
+          console.error(err);
         });
     } else {
-      // --- TRACER LOG 6 ---
-      // This tells us the URL was missing critical info.
-      console.error("Authentication failed. 'code' or 'state' is missing from the URL.");
-      setMessage('Authentication failed. No authorization code or state received from Facebook. Please try again.');
+      // Handle failed security check or missing parameters
+      console.error("❌ Security check FAILED or code/state missing.");
+      setMessage('Authentication failed. The request could not be verified. Please try again.');
     }
-  }, [location]);
+  }, []); // The empty array ensures this runs only once when the page loads
 
   return (
-    <div style={{ padding: '2rem', fontFamily: 'sans-serif', lineHeight: '1.6' }}>
-      <h1>Authentication In Progress</h1>
+    <div style={{ padding: '2rem', fontFamily: 'sans-serif', textAlign: 'center' }}>
+      <h1>Connecting Account...</h1>
       <p>{message}</p>
+      <p style={{ fontSize: '0.8rem', color: '#666', marginTop: '20px' }}>
+        If this window does not close automatically, please close it manually.
+      </p>
     </div>
   );
 };
