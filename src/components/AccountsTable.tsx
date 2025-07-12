@@ -1,15 +1,15 @@
-import {   LayoutDashboard, Trash2 } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { type Account } from '../pages/Index'; // Import the Account type
-import { useAuth } from '../context/AuthContext';
+// In src/components/AccountsTable.tsx
 
+import { LayoutDashboard, Trash2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { type Account } from '../types';
+
+// --- FIX: Removed onEdit and onGetAuthLink from props ---
 interface AccountsTableProps {
   accounts: Account[];
   loading: boolean;
   onDelete: (id: string) => void;
-  onGetAuthLink: (account: Account) => void;
-  // onEdit and onToggleStatus might be handled on other pages now
-  onEdit: (account: Account) => void; 
 }
 
 const AccountsTable: React.FC<AccountsTableProps> = ({ 
@@ -55,7 +55,8 @@ const AccountsTable: React.FC<AccountsTableProps> = ({
                 </td>
                 {userRole === 'admin' && (
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{account.agencyName}</td>
-                )} <td className="px-6 py-4 whitespace-nowrap">
+                )} 
+                <td className="px-6 py-4 whitespace-nowrap">
                   <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                       account.subscriptionStatus === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                     }`}>
@@ -73,10 +74,10 @@ const AccountsTable: React.FC<AccountsTableProps> = ({
                       Dashboard
                     </Link>
                     
-                      <button onClick={() => onDelete(account.id)} className="p-2 text-red-500 hover:bg-red-100 rounded-lg transition-colors" title="Delete Account">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    
+                    <button onClick={() => onDelete(account.id)} className="p-2 text-red-500 hover:bg-red-100 rounded-lg transition-colors" title="Delete Account">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                    {/* --- FIX: Edit and Reconnect buttons have been removed --- */}
                   </div>
                 </td>
               </tr>

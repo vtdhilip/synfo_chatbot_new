@@ -12,7 +12,7 @@ import EditorPage from './pages/EditorPage';
 import InboxPage from "./components/InboxPage";
 import AddAccountPage from "./pages/AddAccountPage";
 import FacebookCallback from './components/FacebookCallback';
-
+import AutomationListPage from "./pages/AutomationListPage";
 import DashboardPage from './pages/DashboardPage';
 
 
@@ -32,7 +32,8 @@ const App = () => (
         }
       >
         <Route path="/" element={<Index />} />
-        <Route path="/editor/:accountId/:flowType" element={<EditorPage />} />
+        <Route path="/editor/:accountId/:automationType/:automationId?" element={<EditorPage />} />
+        <Route path="/automations/:accountId/:automationType" element={<AutomationListPage />} />
         <Route path="/agency/:agencyId/clients" element={<AgencyAccountsPage />} />
         <Route path="/inbox" element={<InboxPage />} />.
 <Route path="/add-account/:platform" element={<AddAccountPage />} />

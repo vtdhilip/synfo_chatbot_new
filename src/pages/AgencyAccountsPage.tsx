@@ -1,54 +1,113 @@
-import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+// In src/pages/AgencyAccountsPage.tsx
+
+import React, { useState, useEffect } from "react";
+import { collection, getDocs, deleteDoc, doc, query, where } from "firebase/firestore";
 import { db } from '../firebase';
-import AccountsTable from '@/components/AccountsTable'; // Using the new AccountsTable
-import { Account } from './Index'; // Using the renamed Account interface
-import { ArrowLeft } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import AdminHeader from '../components/AdminHeader';
+import AccountsTable from '../components/AccountsTable';
+import MessageAlert from '../components/MessageAlert';
+import AddAccountModal from '../components/AddAccountModal';
+import InstagramConnectModal from "../components/InstagramConnectModal";
+import { type Account } from '../types';
 
-const AgencyAccountsPage = () => {
-    const [accounts, setAccounts] = useState<Account[]>([]);
-    const [loading, setLoading] = useState(true);
-    const { agencyId } = useParams<{ agencyId: string }>();
+const AgencyAccountsPage: React.FC = () => {
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { currentUser, userRole } = useAuth();
+  const [isAddAccountModalOpen, setIsAddAccountModalOpen] = useState(false);
+  const [isInstagramConnectModalOpen, setIsInstagramConnectModalOpen] = useState(false);
+  const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState<'success' | 'error' | 'info'>('info');
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterStatus, setFilterStatus] = useState("all");
 
-    useEffect(() => {
-        const fetchAgencyAccounts = async () => {
-            if (!agencyId) return;
-            setLoading(true);
-            try {
-                const accountsRef = collection(db, "clients"); // Still 'clients' collection in DB
-                const q = query(accountsRef, where("agencyId", "==", agencyId));
+  const fetchAccounts = async () => {
+    if (!currentUser) return;
+    setLoading(true);
+    try {
+      const accountsCollectionRef = collection(db, "clients");
+      const q = query(accountsCollectionRef, where("agencyId", "==", currentUser.uid));
+      const querySnapshot = await getDocs(q);
+      const accountsData = querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as Account[];
+      setAccounts(accountsData);
+    } catch (err) {
+      console.error(err);
+      showMessage("Failed to fetch accounts.", "error");
+    }
+    setLoading(false);
+  };
 
-                const querySnapshot = await getDocs(q);
-                const accountsData = querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as Account[];
-                setAccounts(accountsData);
-            } catch (error) {
-                console.error("Error fetching agency accounts:", error);
-            }
-            setLoading(false);
-        };
+  useEffect(() => {
+    if (currentUser) { fetchAccounts(); }
+  }, [currentUser, userRole]);
 
-        fetchAgencyAccounts();
-    }, [agencyId]);
+  const deleteAccount = async (accountId: string) => {
+    if (!window.confirm("Are you sure? This action cannot be undone.")) return;
+    try {
+      await deleteDoc(doc(db, 'clients', accountId));
+      showMessage("Account deleted successfully.", "success");
+      fetchAccounts();
+    } catch (err) {
+      console.error(err);
+      showMessage("Error deleting account.", "error");
+    }
+  };
 
-    return (
-        <div className="container mx-auto px-4 py-8">
-            <Link to="/agencies" className="flex items-center text-blue-600 hover:underline mb-6">
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back to Agencies List
-            </Link>
-            <h1 className="text-3xl font-bold mb-6">Accounts for Agency</h1>
-            <AccountsTable 
-                accounts={accounts} 
-                loading={loading}
-                // These functions would need to be implemented or passed down if actions are needed on this page
-                onEdit={() => {}}
-                onDelete={() => {}}
-                
-                onGetAuthLink={() => {}}
+  const showMessage = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setMessage(msg);
+    setMessageType(type);
+  };
+
+  const handleSelectPlatform = (platform: string) => {
+    setIsAddAccountModalOpen(false);
+    if (platform === 'instagram' || platform === 'facebook') {
+      setIsInstagramConnectModalOpen(true);
+    } else {
+      alert(`${platform} integration is under construction.`);
+    }
+  };
+
+  // --- FIX: handleEditAccount and handleGetAuthLink functions removed ---
+
+  const filteredAccounts = accounts.filter((account) =>
+    (account.clientName?.toLowerCase().includes(searchTerm.toLowerCase()) ?? true) &&
+    (filterStatus === "all" || account.subscriptionStatus === filterStatus)
+  );
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <AdminHeader
+          searchTerm={searchTerm}
+          setSearchTerm={setSearchTerm}
+          filterStatus={filterStatus}
+          setFilterStatus={setFilterStatus}
+          onAddClient={() => setIsAddAccountModalOpen(true)}
+        />
+        {message && <MessageAlert message={message} type={messageType} onClose={() => setMessage("")} />}
+        
+        <div className="mt-8">
+            {/* --- FIX: onEdit and onGetAuthLink props removed from the call --- */}
+            <AccountsTable
+              accounts={filteredAccounts}
+              loading={loading}
+              onDelete={deleteAccount}
             />
         </div>
-    );
+
+        <AddAccountModal
+          isOpen={isAddAccountModalOpen}
+          onClose={() => setIsAddAccountModalOpen(false)}
+          onSelectPlatform={handleSelectPlatform}
+        />
+        <InstagramConnectModal
+          isOpen={isInstagramConnectModalOpen}
+          onClose={() => setIsInstagramConnectModalOpen(false)}
+        />
+      </div>
+    </div>
+  );
 };
 
 export default AgencyAccountsPage;

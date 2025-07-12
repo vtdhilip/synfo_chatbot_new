@@ -3,7 +3,7 @@ export const generateFacebookAuthLink = (state: string): string => {
   // Use your real App ID
   const client_id = "740006708601685";
   
-  const redirect_uri = "https://admin.synapticinfo.com/facebook/callback";
+  const redirect_uri = "https://app.synapticinfo.com/facebook/callback";
   const scope = [
     'pages_show_list',
 
@@ -16,7 +16,7 @@ export const generateFacebookAuthLink = (state: string): string => {
 'instagram_manage_comments',
 
 'business_management',
-
+'pages_read_engagement',
 'instagram_content_publish'
   ].join(',');
   const params = new URLSearchParams({

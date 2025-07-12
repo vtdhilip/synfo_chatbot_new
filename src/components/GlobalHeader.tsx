@@ -4,8 +4,6 @@ import { signOut } from 'firebase/auth';
 import { auth } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 
-import { NavLink } from 'react-router-dom';
-import { MessageSquare } from 'lucide-react';
 const GlobalHeader = () => {
   const navigate = useNavigate();
   const { currentUser, userRole } = useAuth();
@@ -54,7 +52,7 @@ const GlobalHeader = () => {
         {currentUser && (
             <button onClick={handleLogout} style={styles.logoutButton}>Logout</button>
         )}
-        <NavLink
+        {/* <NavLink
     to="/inbox"
     className={({ isActive }) =>
       `flex items-center px-4 py-2 rounded-lg ${
@@ -64,7 +62,7 @@ const GlobalHeader = () => {
   >
     <MessageSquare className="h-5 w-5 mr-3" />
     <span>Inbox</span>
-  </NavLink>
+  </NavLink> */}
       </div>
     </header>
   );

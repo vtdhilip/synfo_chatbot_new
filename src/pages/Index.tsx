@@ -1,4 +1,6 @@
-import { useState, useEffect } from "react";
+// src/pages/Index.tsx
+
+import { useState, useEffect, useCallback } from "react";
 import { collection, getDocs, deleteDoc, doc, query, where } from "firebase/firestore";
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
@@ -6,34 +8,8 @@ import AdminHeader from '../components/AdminHeader';
 import AccountsTable from '../components/AccountsTable';
 import MessageAlert from '../components/MessageAlert';
 import AddAccountModal from '../components/AddAccountModal';
-import InstagramConnectModal from "../components/InstagramConnectModal"; // Corrected import path
-import { useNavigate } from "react-router-dom";
-import { Node, Edge } from 'reactflow';
-// The Account interface defines the data structure
-export interface Account {
-  id: string;
-   platform: 'INSTAGRAM' | 'FACEBOOK' | 'WHATSAPP'; 
-  clientName: string;
-  instagramPageId: string;
-  metaPageToken: string;
-  facebookPageId?: string;
-  subscriptionStatus: 'active' | 'inactive';
-  agencyId: string;
-  agencyName: string;
-  flow?: { nodes: Node[], edges: Edge[] };
-   dmAutomation?: SimpleKeywordAutomation;
-}
-export interface SimpleKeywordAutomation {
-  type: 'simple_keyword'; // Literal type for type safety
-  keywords: string[];
-  reply: {
-    text: string;
-  };
-}
-
-// A utility function to generate the Facebook/Instagram login URL
-
-
+import InstagramConnectModal from "../components/InstagramConnectModal";
+import { Account } from '../types';
 
 const Index = () => {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -45,9 +21,13 @@ const Index = () => {
   const [messageType, setMessageType] = useState<'success' | 'error' | 'info'>('info');
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
-  const navigate = useNavigate();
 
-  const fetchAccounts = async () => {
+  const showMessage = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setMessage(msg);
+    setMessageType(type);
+  };
+
+  const fetchAccounts = useCallback(async () => {
     if (!currentUser) return;
     setLoading(true);
     try {
@@ -63,11 +43,30 @@ const Index = () => {
       showMessage("Failed to fetch accounts.", "error");
     }
     setLoading(false);
-  };
+  }, [currentUser, userRole]);
+
+  // FIX: Added useEffect to call fetchAccounts on initial load
+  useEffect(() => {
+    if (currentUser) {
+        fetchAccounts();
+    }
+  }, [currentUser, fetchAccounts]);
 
   useEffect(() => {
-    if (currentUser) { fetchAccounts(); }
-  }, [currentUser, userRole]);
+    const handleStorageChange = () => {
+      if (localStorage.getItem('reloadAccounts') === 'true') {
+        console.log('Account change detected, reloading data...');
+        fetchAccounts();
+        localStorage.removeItem('reloadAccounts');
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [fetchAccounts]);
 
   const deleteAccount = async (accountId: string) => {
     if (!window.confirm("Are you sure?")) return;
@@ -81,20 +80,14 @@ const Index = () => {
     }
   };
 
-  const showMessage = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
-    setMessage(msg);
-    setMessageType(type);
-  };
-
   const handleSelectPlatform = (platform: string) => {
     setIsAddAccountModalOpen(false);
     if (platform === 'instagram' || platform === 'facebook') {
-      setIsInstagramConnectModalOpen(true); 
+      setIsInstagramConnectModalOpen(true);
     } else {
       alert(`${platform} integration is under construction.`);
     }
   };
-  
 
   const filteredAccounts = accounts.filter((account) =>
     (account.clientName?.toLowerCase().includes(searchTerm.toLowerCase()) ?? true) &&
@@ -118,9 +111,6 @@ const Index = () => {
               accounts={filteredAccounts}
               loading={loading}
               onDelete={deleteAccount}
-              onEdit={() => navigate('/add-account')} // Example: navigate to an edit page
-             
-              onGetAuthLink={() => {}}
             />
         </div>
 
@@ -132,7 +122,6 @@ const Index = () => {
         <InstagramConnectModal
           isOpen={isInstagramConnectModalOpen}
           onClose={() => setIsInstagramConnectModalOpen(false)}
-         
         />
       </div>
     </div>
