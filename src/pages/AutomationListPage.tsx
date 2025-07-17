@@ -1,8 +1,8 @@
 // src/pages/AutomationListPage.tsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { doc, onSnapshot, updateDoc, DocumentSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, DocumentSnapshot } from 'firebase/firestore'; // FIX: Add updateDoc to the import list
 import { db } from '../firebase';
 import { Account, CommentAutomation, SimpleKeywordAutomation } from '../types';
 import { ArrowLeft, Plus, Edit, Trash2, ToggleLeft, ToggleRight, MessageSquare, AtSign, MessageCircle } from 'lucide-react';
@@ -10,14 +10,14 @@ import { ArrowLeft, Plus, Edit, Trash2, ToggleLeft, ToggleRight, MessageSquare, 
 type Automation = CommentAutomation | SimpleKeywordAutomation;
 
 const AutomationListPage: React.FC = () => {
-  // FIX: Added 'story' to the possible automation types
   const { accountId, automationType } = useParams<{ accountId: string; automationType: 'dm' | 'comment' | 'story' }>();
   const navigate = useNavigate();
   const [account, setAccount] = useState<Account | null>(null);
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // FIX: Updated logic to handle all automation types correctly
+  const isMounted = useRef(true);
+
   const getPageConfig = () => {
     switch (automationType) {
       case 'dm':
@@ -50,25 +50,34 @@ const AutomationListPage: React.FC = () => {
   const { fieldName, title: pageTitle, icon: pageIcon } = getPageConfig();
 
   useEffect(() => {
+    isMounted.current = true;
+
     if (!accountId || !fieldName) {
-        setLoading(false);
+        if (isMounted.current) {
+            setLoading(false);
+        }
         return;
     };
     const accountDocRef = doc(db, 'clients', accountId);
 
     const unsubscribe = onSnapshot(accountDocRef, (docSnap: DocumentSnapshot) => {
-      if (docSnap.exists()) {
-        const accountData = { ...docSnap.data(), id: docSnap.id } as Account;
-        setAccount(accountData);
-        setAutomations((accountData as any)[fieldName] || []);
-        setLoading(false);
-      } else {
-        console.error("Account not found!");
-        setLoading(false);
+      if (isMounted.current) {
+        if (docSnap.exists()) {
+          const accountData = { ...docSnap.data(), id: docSnap.id } as Account;
+          setAccount(accountData);
+          setAutomations((accountData as any)[fieldName] || []);
+          setLoading(false);
+        } else {
+          console.error("Account not found!");
+          setLoading(false);
+        }
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      isMounted.current = false;
+    };
   }, [accountId, fieldName]);
 
   const handleToggle = async (automationId: string, currentState: boolean) => {
@@ -95,7 +104,6 @@ const AutomationListPage: React.FC = () => {
     return <div className="p-8 text-center">Loading automations...</div>;
   }
   
-  // FIX: Add a specific "Coming Soon" view for story automations
   if (automationType === 'story') {
     return (
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 text-center">
@@ -116,7 +124,7 @@ const AutomationListPage: React.FC = () => {
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <Link to={`/dashboard/${accountId}`} className="inline-flex items-center text-blue-600 hover:underline mb-6">
         <ArrowLeft className="w-4 h-4 mr-2" />
-        Back to Dashboard
+        Back to Automation List
       </Link>
 
       <div className="flex justify-between items-center mb-8">

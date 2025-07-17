@@ -12,10 +12,10 @@ interface AccountsTableProps {
   onDelete: (id: string) => void;
 }
 
-const AccountsTable: React.FC<AccountsTableProps> = ({ 
-  accounts, 
-  loading, 
-  onDelete, 
+const AccountsTable: React.FC<AccountsTableProps> = ({
+  accounts,
+  loading,
+  onDelete,
 }) => {
   const { userRole } = useAuth();
 
@@ -55,7 +55,7 @@ const AccountsTable: React.FC<AccountsTableProps> = ({
                 </td>
                 {userRole === 'admin' && (
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{account.agencyName}</td>
-                )} 
+                )}
                 <td className="px-6 py-4 whitespace-nowrap">
                   <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                       account.subscriptionStatus === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
@@ -73,7 +73,7 @@ const AccountsTable: React.FC<AccountsTableProps> = ({
                       <LayoutDashboard className="w-3 h-3 mr-1.5" />
                       Dashboard
                     </Link>
-                    
+
                     <button onClick={() => onDelete(account.id)} className="p-2 text-red-500 hover:bg-red-100 rounded-lg transition-colors" title="Delete Account">
                       <Trash2 className="w-4 h-4" />
                     </button>

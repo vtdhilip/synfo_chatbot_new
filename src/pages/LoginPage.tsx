@@ -1,52 +1,79 @@
-
-
 // src/pages/LoginPage.tsx
 
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { auth, db } from '../firebase';
-import { 
-  signInWithEmailAndPassword, 
+import { auth, db } from '../firebase'; // REVERTED: Directly import auth and db
+import {
+  signInWithEmailAndPassword,
   signOut,
-  GoogleAuthProvider,  // 👈 Import Google provider
-  FacebookAuthProvider, // 👈 Import Facebook provider
-  signInWithPopup,  
-  
-  linkWithCredential    // 👈 Import signInWithPopup
+  GoogleAuthProvider,
+  FacebookAuthProvider,
+  signInWithPopup,
+  linkWithCredential
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from "firebase/firestore"; // 👈 Import Firestore functions
+import { doc, getDoc, setDoc } from "firebase/firestore";
+// import { useFirebase } from '../hooks/useFirebase'; // REMOVED: This import is causing the error
 
 const LoginPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { currentUser } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  // --- This function handles creating a user profile in your database on first login ---
-  const handleSocialSignIn = async (result: any) => {
+  // REMOVED: const { auth, db } = useFirebase(); // This line is no longer needed
+
+  const redirectPath = new URLSearchParams(location.search).get('redirect_to');
+  const finalRedirectUrl = redirectPath || '/';
+
+  useEffect(() => {
+    if (currentUser) {
+      try {
+        const url = new URL(finalRedirectUrl);
+        if (url.origin !== window.location.origin) {
+          window.location.href = finalRedirectUrl;
+        } else {
+          navigate(finalRedirectUrl, { replace: true });
+        }
+      } catch (e) {
+        navigate(finalRedirectUrl, { replace: true });
+      }
+    }
+  }, [currentUser, navigate, finalRedirectUrl]);
+
+  const handleSocialSignIn = useCallback(async (result: any, path: string) => {
     const user = result.user;
     const userDocRef = doc(db, 'users', user.uid);
     const docSnap = await getDoc(userDocRef);
 
-    // If the user document doesn't exist, it's their first time logging in
     if (!docSnap.exists()) {
       await setDoc(userDocRef, {
         email: user.email,
         displayName: user.displayName,
-        role: 'agency', // Assign a default role
+        role: 'agency',
         agencyName: user.displayName || 'New Agency',
         createdAt: new Date()
       });
     }
-    navigate('/'); // Redirect to dashboard
-  };
+    try {
+        const url = new URL(path);
+        if (url.origin !== window.location.origin) {
+            window.location.href = path;
+        } else {
+            navigate(path, { replace: true });
+        }
+    } catch (e) {
+        navigate(path, { replace: true });
+    }
+  }, [navigate, db]);
+
 
   const handleGoogleSignIn = () => {
      const provider = new GoogleAuthProvider();
      signInWithPopup(auth, provider)
-      .then(handleSocialSignIn)
+      .then((result) => handleSocialSignIn(result, finalRedirectUrl))
       .catch(async (error) => {
         if (error.code === 'auth/account-exists-with-different-credential') {
           const pendingCred = GoogleAuthProvider.credentialFromError(error);
@@ -57,7 +84,16 @@ const LoginPage = () => {
               const userCredential = await signInWithEmailAndPassword(auth, email, password);
               await linkWithCredential(userCredential.user, pendingCred!);
               alert("Success! Your Google account has been linked.");
-              navigate('/');
+              try {
+                  const url = new URL(finalRedirectUrl);
+                  if (url.origin !== window.location.origin) {
+                      window.location.href = finalRedirectUrl;
+                  } else {
+                      navigate(finalRedirectUrl, { replace: true });
+                  }
+              } catch (e) {
+                  navigate(finalRedirectUrl, { replace: true });
+              }
             } catch (linkError) {
               setError("Failed to link accounts. Please check your password.");
             }
@@ -71,10 +107,10 @@ const LoginPage = () => {
   const handleFacebookSignIn = () => {
     const provider = new FacebookAuthProvider();
     signInWithPopup(auth, provider)
-      .then(handleSocialSignIn)
+      .then((result) => handleSocialSignIn(result, finalRedirectUrl))
       .catch((err) => setError(err.message));
   };
-  
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -86,8 +122,17 @@ const LoginPage = () => {
 
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      navigate('/'); // Redirect to dashboard on success
-    } catch (err) {
+      try {
+          const url = new URL(finalRedirectUrl);
+          if (url.origin !== window.location.origin) {
+              window.location.href = finalRedirectUrl;
+          } else {
+              navigate(finalRedirectUrl, { replace: true });
+          }
+      } catch (e) {
+          navigate(finalRedirectUrl, { replace: true });
+      }
+    } catch (err: any) {
       setError('Failed to log in. Please check your credentials.');
     }
   };
@@ -95,7 +140,7 @@ const LoginPage = () => {
   const handleLogout = async () => {
      try {
          await signOut(auth);
-         navigate('/login'); // Redirect to login page after logout
+         navigate('/login');
      } catch (err) {
          console.error("Logout error:", err);
          alert("Failed to log out.");
@@ -116,19 +161,24 @@ const LoginPage = () => {
          border: '1px solid #d1d5db', backgroundColor: 'white', cursor: 'pointer',
          fontWeight: 500,
      },
-     // --- NEW STYLE FOR ICON-ONLY BUTTONS ---
      iconButton: {
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        width: '3rem', // 48px
-        height: '3rem', // 48px
+        width: '3rem',
+        height: '3rem',
         border: '1px solid #e5e7eb',
-        borderRadius: '50%', // Makes it circular
+        borderRadius: '50%',
         backgroundColor: 'white',
         cursor: 'pointer',
         transition: 'background-color 0.2s',
      },
+     linkText: { // Added for the signup link
+        textAlign: 'center' as 'center', marginTop: '1.5rem', fontSize: '0.875rem', color: '#6b7280'
+     },
+     link: { // Added for the signup link
+        color: '#2563eb', textDecoration: 'none', fontWeight: '600'
+     }
   };
 
 
@@ -136,7 +186,7 @@ const LoginPage = () => {
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#f3f4f6' }}>
       <div style={{ padding: '2rem', backgroundColor: 'white', borderRadius: '0.75rem', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', width: '100%', maxWidth: '24rem' }}>
         <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', textAlign: 'center', marginBottom: '1.5rem' }}>Admin Login</h1>
-        
+
         {/* Social Login Buttons */}
        <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
           <button title="Continue with Google" onClick={handleGoogleSignIn} style={styles.iconButton} onMouseOver={(e) => e.currentTarget.style.backgroundColor='#f9fafb'} onMouseOut={(e) => e.currentTarget.style.backgroundColor='white'}>
@@ -179,7 +229,9 @@ const LoginPage = () => {
           </button>
         </form>
 
-        {error && <p style={{ color: '#ef4444', marginTop: '1.5rem', fontSize: '0.875rem' }}>{error}</p>}
+        <p style={styles.linkText}>
+          Don't have an account? <Link to="/create-account" style={styles.link}>Sign Up</Link>
+        </p>
       </div>
     </div>
   );

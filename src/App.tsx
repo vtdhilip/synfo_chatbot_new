@@ -1,65 +1,65 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import Index from "./pages/Index";
-import LoginPage from "./pages/LoginPage";
-import ProtectedRoute from "./components/ProtectedRoute";
-import Layout from "./components/Layout";
-import AgenciesPage from "./pages/AgenciesPage";
-import AdminRoute from "./components/AdminRoute";
-import NotFound from "./pages/NotFound";
-import AgencyAccountsPage from "./pages/AgencyAccountsPage";
-import AuthCallback from './components/AuthCallback';
-import EditorPage from './pages/EditorPage';
-import InboxPage from "./components/InboxPage";
-import AddAccountPage from "./pages/AddAccountPage";
-import FacebookCallback from './components/FacebookCallback';
-import AutomationListPage from "./pages/AutomationListPage";
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import Layout from './components/Layout';
+import ProtectedRoute from './components/ProtectedRoute';
+
+// Import New Components
+import SettingsLayout from './components/SettingsLayout';
+import ProfileSettingsPage from './pages/ProfileSettingsPage';
+import SecuritySettingsPage from './pages/SecuritySettingsPage';
+
+// Import Existing Page Components
+import Index from './pages/Index';
+import LoginPage from './pages/LoginPage';
+import CreateAccountPage from './pages/CreateAccountPage';
+import SubscriptionPage from './pages/SubscriptionPage';
 import DashboardPage from './pages/DashboardPage';
+// ... other page imports
 
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Layout />}>
+          {/* Protected Routes */}
+          <Route
+            index
+            element={
+              <ProtectedRoute>
+                <Index />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="dashboard/:accountId"
+            element={
+              <ProtectedRoute>
+                <DashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* --- NEW SETTINGS ROUTES --- */}
+          <Route
+            path="settings"
+            element={
+              <ProtectedRoute>
+                <SettingsLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route path="profile" element={<ProfileSettingsPage />} />
+            <Route path="security" element={<SecuritySettingsPage />} />
+            <Route path="subscription" element={<SubscriptionPage />} />
+          </Route>
+          {/* ... other protected routes ... */}
+        </Route>
 
-const App = () => (
-  <BrowserRouter>
-    <Routes>
-      {/* Public routes */}
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/auth/callback" element={<AuthCallback />} />
-      <Route path="/facebook/callback" element={<FacebookCallback />} />
-      {/* Protected routes wrapped by the Layout */}
-      <Route
-        element={
-          <ProtectedRoute>
-            <Layout />
-          </ProtectedRoute>
-        }
-      >
-        <Route path="/" element={<Index />} />
-        <Route path="/editor/:accountId/:automationType/:automationId?" element={<EditorPage />} />
-        <Route path="/automations/:accountId/:automationType" element={<AutomationListPage />} />
-        <Route path="/agency/:agencyId/clients" element={<AgencyAccountsPage />} />
-        <Route path="/inbox" element={<InboxPage />} />.
-<Route path="/add-account/:platform" element={<AddAccountPage />} />
-
-<Route path="/dashboard/:accountId" element={<DashboardPage />} />
-        <Route
-          path="/agencies"
-          element={
-            <AdminRoute>
-              <AgenciesPage />
-            </AdminRoute>
-          }
-        />
-        <Route
-          path="/agency/:agencyId/clients"
-          element={<AdminRoute> <AgencyAccountsPage /> </AdminRoute>}
-        />
-
-      </Route>
-
-      {/* You can add other protected pages here, like /settings */}
-
-
-      <Route path="*" element={<NotFound />} />
-    </Routes>
-  </BrowserRouter>
-);
+        {/* Public Routes */}
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/create-account" element={<CreateAccountPage />} />
+        {/* ... other public routes ... */}
+      </Routes>
+    </BrowserRouter>
+  );
+}
 
 export default App;

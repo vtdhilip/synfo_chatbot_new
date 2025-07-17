@@ -14,13 +14,15 @@ import { Account } from '../types';
 const Index = () => {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
-  const { currentUser, userRole } = useAuth();
+  const { currentUser, userRole, subscription } = useAuth(); // FIX: Get subscription from useAuth
   const [isAddAccountModalOpen, setIsAddAccountModalOpen] = useState(false);
   const [isInstagramConnectModalOpen, setIsInstagramConnectModalOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<'success' | 'error' | 'info'>('info');
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
+  // FIX: Renamed state to monthlyAutomationExecutions
+  const [monthlyAutomationExecutions, setMonthlyAutomationExecutions] = useState(0);
 
   const showMessage = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
     setMessage(msg);
@@ -45,10 +47,9 @@ const Index = () => {
     setLoading(false);
   }, [currentUser, userRole]);
 
-  // FIX: Added useEffect to call fetchAccounts on initial load
   useEffect(() => {
     if (currentUser) {
-        fetchAccounts();
+      fetchAccounts();
     }
   }, [currentUser, fetchAccounts]);
 
@@ -80,6 +81,50 @@ const Index = () => {
     }
   };
 
+  // FIX: Modified fetchMonthlyAutomationExecutions
+  useEffect(() => {
+    const fetchMonthlyAutomationExecutions = async () => {
+      if (!currentUser) {
+        setMonthlyAutomationExecutions(0);
+        return;
+      }
+
+      let totalExecutionsThisMonth = 0;
+      try {
+        if (accounts.length === 0 && !loading) {
+          setMonthlyAutomationExecutions(0);
+          return;
+        }
+
+        const today = new Date();
+        const currentMonthYear = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}`;
+
+        for (const account of accounts) {
+          const analyticsCollectionRef = collection(db, `analytics/${account.id}/daily`);
+          const q = query(analyticsCollectionRef);
+          const querySnapshot = await getDocs(q);
+
+          querySnapshot.docs.forEach(docSnap => {
+            const docId = docSnap.id;
+            if (docId.startsWith(currentMonthYear)) {
+              const dailyData = docSnap.data();
+              // FIX: Prioritize 'total_automations' if available, else sum DMs and comments
+              totalExecutionsThisMonth += (dailyData?.total_automations || (dailyData?.automated_dms || 0) + (dailyData?.automated_comments || 0));
+            }
+          });
+        }
+        setMonthlyAutomationExecutions(totalExecutionsThisMonth);
+      } catch (error) {
+        console.error("[Index] Error fetching monthly automation executions:", error);
+        setMonthlyAutomationExecutions(0);
+      }
+    };
+
+    if (currentUser && !loading) {
+        fetchMonthlyAutomationExecutions();
+    }
+  }, [currentUser, accounts, loading]);
+
   const handleSelectPlatform = (platform: string) => {
     setIsAddAccountModalOpen(false);
     if (platform === 'instagram' || platform === 'facebook') {
@@ -94,6 +139,8 @@ const Index = () => {
     (filterStatus === "all" || account.subscriptionStatus === filterStatus)
   );
 
+  const currentPlanId = (subscription?.planId || 'free');
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -103,6 +150,8 @@ const Index = () => {
           filterStatus={filterStatus}
           setFilterStatus={setFilterStatus}
           onAddClient={() => setIsAddAccountModalOpen(true)}
+          currentPlanId={currentPlanId as any}
+          automatedExecutions={monthlyAutomationExecutions} // FIX: Pass automatedExecutions
         />
         {message && <MessageAlert message={message} type={messageType} onClose={() => setMessage("")} />}
         

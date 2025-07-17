@@ -1,5 +1,5 @@
-
-import { Search, Filter, Plus } from 'lucide-react';
+import { Search, Filter, Plus, MessageSquare } from 'lucide-react';
+import { PlanId, PlanCapabilities, planFeatures } from '../config/plans'; // FIX: Import from plans.ts
 
 interface AdminHeaderProps {
   onAddClient: () => void;
@@ -7,15 +7,33 @@ interface AdminHeaderProps {
   setSearchTerm: (term: string) => void;
   filterStatus: string;
   setFilterStatus: (status: string) => void;
+  currentPlanId: PlanId;
+  automatedExecutions: number;
 }
 
-const AdminHeader = ({ 
-  searchTerm, 
-  setSearchTerm, 
-  filterStatus, 
-  setFilterStatus, 
-  onAddClient 
+const AdminHeader = ({
+  searchTerm,
+  setSearchTerm,
+  filterStatus,
+  setFilterStatus,
+  onAddClient,
+  currentPlanId,
+  automatedExecutions,
 }: AdminHeaderProps) => {
+
+  const currentPlanCapabilities: PlanCapabilities = planFeatures[currentPlanId] || planFeatures['free'];
+  const automationLimit = currentPlanCapabilities.maxAutomations;
+  const automationLimitText = typeof automationLimit === 'number' ? `${automatedExecutions} / ${automationLimit}` : 'Unlimited';
+  const automationStatusColor = typeof automationLimit === 'number' && automatedExecutions >= automationLimit * 0.9
+    ? 'text-red-500'
+    : typeof automationLimit === 'number' && automatedExecutions >= automationLimit * 0.7
+      ? 'text-yellow-500'
+      : 'text-green-600';
+  const automationTooltip = typeof automationLimit === 'number'
+    ? `You have used ${automatedExecutions} out of ${automationLimit} automated executions this month.`
+    : 'Your plan includes unlimited automated executions.';
+
+
   return (
        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
       <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
@@ -24,6 +42,14 @@ const AdminHeader = ({
             Account Management
           </h1>
           <p className="text-gray-600 mt-1">Manage your Accounts and their integrations</p>
+        </div>
+
+        <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-lg border border-gray-200 shadow-sm" title={automationTooltip}>
+          <MessageSquare className="w-5 h-5 text-blue-500" />
+          <div className="text-sm">
+            <p className="font-semibold text-gray-700">Automated Executions</p>
+            <p className={`font-bold ${automationStatusColor}`}>{automationLimitText}</p>
+          </div>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
@@ -53,11 +79,11 @@ const AdminHeader = ({
             onClick={onAddClient}
             className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-6 py-2.5 rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-5 h-5" />
             Add Account
           </button>
+        </div>
       </div>
-    </div>
     </div>
   );
 };

@@ -2,7 +2,7 @@
 export const generateFacebookAuthLink = (state: string): string => {
   // Use your real App ID
   const client_id = "740006708601685";
-  
+  const policy_uri = "https://synapticinfo.com/privacy-policy.html";
   const redirect_uri = "https://app.synapticinfo.com/facebook/callback";
   const scope = [
     'pages_show_list',
@@ -25,6 +25,7 @@ export const generateFacebookAuthLink = (state: string): string => {
     scope,
     response_type: 'code',
     state,
+    policy_uri: policy_uri
   });
 
   // Use the main facebook.com dialog URL for all business connections
