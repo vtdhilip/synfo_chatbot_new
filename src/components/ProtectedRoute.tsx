@@ -7,9 +7,9 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const { currentUser, loading } = useAuth();
+  const { currentUser, isAppLoading } = useAuth();
 
-  if (loading) {
+  if (isAppLoading) {
     return <div>Loading...</div>; // Or a spinner component
   }
 
