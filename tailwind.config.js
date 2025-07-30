@@ -18,6 +18,21 @@ const config = {
       },
     },
     extend: {
+      colors: {
+        'brand': {
+          DEFAULT: '#ff5a00', // Your primary brand color
+          '50': '#fff0e6',
+          '100': '#ffdfcc',
+          '200': '#ffc0a3',
+          '300': '#ffa07a',
+          '400': '#ff8152',
+          '500': '#ff5a00', // Base
+          '600': '#e64f00',
+          '700': '#cc4600',
+          '800': '#b33c00',
+          '900': '#993300',
+        },
+      },
       keyframes: {
         "accordion-down": {
           from: { height: "0" },

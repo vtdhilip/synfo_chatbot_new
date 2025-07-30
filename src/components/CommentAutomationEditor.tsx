@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   type Account,
   CommentAutomation,
@@ -6,14 +6,118 @@ import {
   InstagramPost
 } from '../types';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { getApp } from 'firebase/app';
-import { User } from 'lucide-react';
+import { v4 as uuidv4 } from 'uuid';
+import { Save, X, AlertCircle, CheckCircle, Loader2, User, MessageSquare, Heart, Send, Bookmark, MoreHorizontal, ArrowLeft, Video, SquarePlus, } from 'lucide-react';
 
 interface CommentAutomationEditorProps {
   account: Account;
   existingAutomation?: CommentAutomation;
   onSave: (automationData: CommentAutomation) => Promise<void>;
 }
+
+// Mobile preview component (no changes needed here)
+const CommentPreview: React.FC<{
+  account: Account;
+  postThumbnailUrl?: string;
+  postCaption?: string;
+  userComment: string;
+  botCommentReply?: string;
+  botDmReply: string;
+  previewMode: 'comments' | 'dm';
+}> = ({ account, postThumbnailUrl, postCaption, userComment, botCommentReply, botDmReply, previewMode }) => {
+    const renderPersonalizedMessage = (message: string) => {
+        return message
+        .replace(/{{user_name}}/g, 'John Doe')
+        .replace(/{{user_first_name}}/g, 'John')
+        .replace(/{{user_last_name}}/g, 'Doe');
+    };
+
+    const accountWithProfilePic = account as Account & { profilePictureUrl?: string };
+
+    return (
+        <div className="sticky top-8">
+            <div className="w-full max-w-sm mx-auto bg-black rounded-[40px] p-1 shadow-2xl border-4 border-zinc-800">
+            <div className="bg-black rounded-[36px] h-[620px] overflow-hidden flex flex-col relative">
+                {previewMode === 'comments' && (
+                    <>
+                        <header className="flex items-center justify-between p-3 flex-shrink-0 z-10">
+                            <div className="flex items-center min-w-0">
+                                <div className="w-8 h-8 rounded-full flex-shrink-0 bg-zinc-800">
+                                    {accountWithProfilePic.profilePictureUrl ? <img src={accountWithProfilePic.profilePictureUrl} className="w-full h-full rounded-full object-cover"/> : <User className="w-5 h-5 text-slate-500 m-auto"/> }
+                                </div>
+                                <p className="font-semibold text-sm text-white ml-3 truncate">{account.clientName}</p>
+                            </div>
+                            <MoreHorizontal className="w-5 h-5 text-white" />
+                        </header>
+                        <main className="flex-grow flex flex-col min-h-0 hide-scrollbar">
+                        {postThumbnailUrl ? (
+                            <>
+                                <div className="aspect-square w-full bg-zinc-900 flex-shrink-0">
+                                    <img src={postThumbnailUrl} alt="Post thumbnail" className="w-full h-full object-cover" />
+                                </div>
+                                <div className="py-2 flex justify-between items-center px-4 flex-shrink-0">
+                                    <div className="flex items-center gap-4"><Heart className="w-6 h-6 text-white" /><MessageSquare className="w-6 h-6 text-white -scale-x-100" /><Send className="w-6 h-6 text-white" /></div>
+                                    <Bookmark className="w-6 h-6 text-white" />
+                                </div>
+                                <div className="px-4 pb-4 flex-grow overflow-y-auto hide-scrollbar">
+                                    <div className="text-sm text-white">
+                                        <p><span className="font-semibold">{account.clientName}</span> <span className="font-normal text-zinc-400">{postCaption || "Your selected post's caption..."}</span></p>
+                                    </div>
+                                    <div className="mt-2">
+                                        <p className="text-zinc-400 text-xs font-semibold border-b border-zinc-800 pb-2">View all comments</p>
+                                    </div>
+                                    <div className="py-4 space-y-4">
+                                        <div className="flex items-start gap-2.5">
+                                            <div className="w-7 h-7 bg-slate-200 rounded-full flex-shrink-0"><img src={`https://ui-avatars.com/api/?name=John+Doe&background=random`} className="w-full h-full rounded-full object-cover" /></div>
+                                            <div><p className="text-xs text-white"><span className="font-semibold">john_doe</span> {userComment}</p></div>
+                                        </div>
+                                        {botCommentReply && (
+                                        <div className="flex items-start gap-2.5 ml-9">
+                                            <div className="w-6 h-6 rounded-full flex-shrink-0 bg-zinc-800">
+                                            {accountWithProfilePic.profilePictureUrl ? <img src={accountWithProfilePic.profilePictureUrl} className="w-full h-full rounded-full object-cover"/> : <User className="w-4 h-4 text-slate-500 m-auto"/> }
+                                            </div>
+                                            <div><p className="text-xs text-white"><span className="font-semibold">{account.clientName}</span> {botCommentReply}</p></div>
+                                        </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="p-4 flex flex-col h-full">
+                                <div className="aspect-square w-full bg-zinc-900/50 border-2 border-dashed border-zinc-700 rounded-md flex items-center justify-center text-center p-4">
+                                    <p className="text-zinc-500">You haven't picked a post or reel for your automation yet</p>
+                                </div>
+                            </div>
+                        )}
+                        </main>
+                    </>
+                )}
+                {previewMode === 'dm' && (
+                    <>
+                        <header className="flex items-center justify-between p-3 border-b border-zinc-800 flex-shrink-0 z-10">
+                            <div className="flex items-center min-w-0"><ArrowLeft className="w-6 h-6 text-white flex-shrink-0" /><div className="w-8 h-8 rounded-full ml-4 flex-shrink-0"><img src={`https://ui-avatars.com/api/?name=John+Doe&background=random`} className="w-full h-full rounded-full object-cover" /></div><p className="font-semibold text-base text-white ml-3 truncate">john_doe</p></div>
+                            <div className="flex items-center space-x-4 flex-shrink-0"><Video className="w-6 h-6 text-white" /><SquarePlus className="w-6 h-6 text-white" /></div>
+                        </header>
+                        <main className="flex-grow p-4 overflow-y-auto space-y-4 flex flex-col-reverse hide-scrollbar">
+                            <div className="space-y-4">
+                                <div className="flex justify-end">
+                                    <div className="bg-gradient-to-tr from-purple-600 to-blue-500 text-white rounded-3xl rounded-br-lg max-w-[85%] flex flex-col self-end">
+                                        <p className="text-base py-2 px-3.5 whitespace-pre-wrap">{renderPersonalizedMessage(botDmReply) || "Your DM reply..."}</p>
+                                    </div>
+                                </div>
+                                <div className="flex justify-start">
+                                    <div className="max-w-[85%] bg-zinc-800 text-white p-3 rounded-3xl rounded-bl-lg"><p className="text-base">{userComment}</p></div>
+                                </div>
+                            </div>
+                        </main>
+                    </>
+                )}
+            </div>
+            </div>
+        </div>
+    );
+};
+
 
 const CommentAutomationEditor: React.FC<CommentAutomationEditorProps> = ({ account, existingAutomation, onSave }) => {
   const [name, setName] = useState('');
@@ -25,13 +129,16 @@ const CommentAutomationEditor: React.FC<CommentAutomationEditorProps> = ({ accou
   const [keywords, setKeywords] = useState('');
   const [replyMessage, setReplyMessage] = useState('');
   const [commentReplyText, setCommentReplyText] = useState('');
-  const [linkUrl, setLinkUrl] = useState('');
-  const [linkTitle, setLinkTitle] = useState('');
-  const [showLinkFields, setShowLinkFields] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [postsLoading, setPostsLoading] = useState(false);
+  const [postsLoading, setPostsLoading] = useState(true);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [previewMode, setPreviewMode] = useState<'comments' | 'dm'>('comments');
+
+  // --- NEW: State for new features ---
+  const [followerOnly, setFollowerOnly] = useState(false);
+  const [delayInMinutes, setDelayInMinutes] = useState(0);
 
   const keywordSuggestions = ['price', 'link', 'info', 'shop', 'hello', 'help'];
 
@@ -45,28 +152,18 @@ const CommentAutomationEditor: React.FC<CommentAutomationEditorProps> = ({ accou
       setKeywords(existingAutomation.keywords.join(', '));
       setReplyMessage(existingAutomation.reply.text);
       setCommentReplyText(existingAutomation.commentReplyText || '');
-
-      if (existingAutomation.reply.link) {
-        setLinkUrl(existingAutomation.reply.link.url);
-        setLinkTitle(existingAutomation.reply.link.title);
-        setShowLinkFields(true);
-      } else {
-        setLinkUrl('');
-        setLinkTitle('');
-        setShowLinkFields(false);
-      }
+      // --- NEW: Load data for new features ---
+      setFollowerOnly(existingAutomation.followerOnly || false);
+      setDelayInMinutes(existingAutomation.delayInMinutes || 0);
     } else {
-      setName('');
-      setSelectedPostId(null);
-      setSelectedPostThumbnail(undefined);
-      setSelectedPostCaption(undefined);
-      setTriggerType('all_comments');
-      setKeywords('');
-      setReplyMessage('');
-      setCommentReplyText('');
-      setLinkUrl('');
-      setLinkTitle('');
-      setShowLinkFields(false);
+        setName('');
+        setSelectedPostId(null);
+        setTriggerType('all_comments');
+        setKeywords('');
+        setReplyMessage('');
+        setCommentReplyText('');
+        setFollowerOnly(false);
+        setDelayInMinutes(0);
     }
   }, [existingAutomation]);
 
@@ -75,63 +172,40 @@ const CommentAutomationEditor: React.FC<CommentAutomationEditorProps> = ({ accou
       if (!account.id) return;
       setPostsLoading(true);
       try {
-        const app = getApp();
-        const functionsInstance = getFunctions(app);
-        const getInstagramPostsCallable = httpsCallable(functionsInstance, 'getInstagramPosts');
-        const result = await getInstagramPostsCallable({ clientId: account.id });
+        const functions = getFunctions();
+        const getInstagramPosts = httpsCallable(functions, 'getInstagramPosts');
+        const result = await getInstagramPosts({ clientId: account.id });
         const fetchedPosts = (result.data as { posts: InstagramPost[] }).posts;
         setPosts(fetchedPosts);
-
-        if (existingAutomation && existingAutomation.postId) {
-          const currentPostInFetched = fetchedPosts.find(p => p.id === existingAutomation.postId);
-          if (currentPostInFetched) {
-            setSelectedPostThumbnail(currentPostInFetched.thumbnail_url);
-            setSelectedPostCaption(currentPostInFetched.caption);
-          }
-        }
       } catch (error) {
         console.error("Failed to fetch posts:", error);
-        setSaveError("Failed to load posts.");
+        setSaveError("Failed to load your Instagram posts. Please try again.");
       } finally {
         setPostsLoading(false);
       }
     };
     fetchPosts();
-  }, [account.id, existingAutomation]);
+  }, [account.id]);
 
-  const handleSave = async () => {
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
     setLoading(true);
     setSaveError(null);
     setSaveSuccess(false);
 
-    if (!name.trim()) {
-      setSaveError('Automation name cannot be empty.');
-      setLoading(false);
-      return;
-    }
-    if (!selectedPostId) {
-      setSaveError('Please select a post for the automation.');
-      setLoading(false);
-      return;
-    }
-    if (!replyMessage.trim()) {
-      setSaveError('The DM reply message cannot be empty.');
+    if (!name.trim() || !selectedPostId || !replyMessage.trim()) {
+      setSaveError('Name, a selected post, and a DM reply are required.');
       setLoading(false);
       return;
     }
     if (triggerType === 'keyword_match' && !keywords.trim()) {
-      setSaveError('Keywords cannot be empty for keyword match automation.');
-      setLoading(false);
-      return;
-    }
-    if (showLinkFields && (!linkUrl.trim() || !linkTitle.trim())) {
-      setSaveError('Link URL and Title cannot be empty if link fields are shown.');
+      setSaveError('Keywords are required for this trigger type.');
       setLoading(false);
       return;
     }
 
     const automationData: CommentAutomation = {
-      id: existingAutomation?.id || new Date().getTime().toString(),
+      id: existingAutomation?.id || uuidv4(),
       name: name.trim(),
       enabled: existingAutomation?.enabled ?? true,
       type: 'comment_automation',
@@ -140,15 +214,9 @@ const CommentAutomationEditor: React.FC<CommentAutomationEditorProps> = ({ accou
       postCaption: selectedPostCaption,
       triggerType: triggerType,
       keywords: triggerType === 'keyword_match' ? keywords.split(',').map(k => k.trim()).filter(Boolean) : [],
-      reply: {
-        text: replyMessage.trim(),
-        ...(showLinkFields && linkUrl.trim() && linkTitle.trim() && {
-          link: {
-            url: linkUrl.trim(),
-            title: linkTitle.trim(),
-          }
-        }),
-      },
+      followerOnly: followerOnly, // <-- ADDED
+      delayInMinutes: Number(delayInMinutes), // <-- ADDED
+      reply: { text: replyMessage.trim() },
       commentReplyText: commentReplyText.trim(),
     };
 
@@ -162,168 +230,146 @@ const CommentAutomationEditor: React.FC<CommentAutomationEditorProps> = ({ accou
       setLoading(false);
     }
   };
-
-  const handleAddKeywordFromSuggestion = (suggestion: string) => {
-    const currentKeywords = keywords.split(',').map(k => k.trim()).filter(Boolean);
-    if (!currentKeywords.some(k => k.toLowerCase() === suggestion.toLowerCase())) {
-      setKeywords(currentKeywords.concat(suggestion).join(', '));
+  
+  const handleAddKeyword = (suggestion: string) => {
+    const current = keywords.split(',').map(k => k.trim()).filter(Boolean);
+    if (!current.some(k => k.toLowerCase() === suggestion.toLowerCase())) {
+      setKeywords([...current, suggestion].join(', '));
     }
   };
 
+  
+
   const previewCommentText = triggerType === 'all_comments' ? 'Great post!' : keywords.split(',').filter(Boolean)[0] || 'Hello';
-  const displayPostCaption = selectedPostCaption ? selectedPostCaption.substring(0, 50) + (selectedPostCaption.length > 50 ? '...' : '') : 'Selected post caption';
+  const inputStyles = "w-full p-3 bg-slate-100 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand/50 focus:border-brand transition-all";
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 py-6">
-      <div className="bg-white p-6 rounded-lg shadow-sm border">
-        <div className="mb-6">
-          <label htmlFor="automationName" className="block text-xl font-semibold text-gray-800 mb-4">Automation Name</label>
-          <input
-            id="automationName"
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g., 'Welcome Comment Reply'"
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-          />
-        </div>
-
-        <div className="mb-6">
-          <label className="block text-xl font-semibold text-gray-800 mb-4">Choose a Post</label>
-          <div className="bg-gray-50 p-5 rounded-lg shadow-inner-sm border border-gray-200 min-h-[150px] flex flex-col">
-            {postsLoading ? (
-              <div className="flex justify-center items-center h-full text-gray-500">Loading posts...</div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 max-h-64 overflow-y-auto">
-                {posts.map((post) => (
-                  <div
-                    key={post.id}
-                    className={`cursor-pointer border-2 rounded-lg overflow-hidden ${selectedPostId === post.id ? 'border-blue-600' : 'border-gray-300'}`}
-                    onClick={() => {
-                      setSelectedPostId(post.id);
-                      setSelectedPostThumbnail(post.thumbnail_url);
-                      setSelectedPostCaption(post.caption);
-                    }}
-                  >
-                    <img src={post.thumbnail_url} alt={post.caption || 'Post thumbnail'} className="w-full h-24 object-cover" />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="mb-6">
-          <label className="block text-xl font-semibold text-gray-800 mb-4">When someone comments on this post</label>
-          <div className="bg-gray-50 p-5 rounded-lg">
-            <div className="mb-4">
-              <label className="inline-flex items-center">
-                <input type="radio" className="form-radio" name="commentTrigger" value="all_comments" checked={triggerType === 'all_comments'} onChange={() => setTriggerType('all_comments')} />
-                <span className="ml-2">Send DM to all comments</span>
-              </label>
-            </div>
+    <form onSubmit={handleSave}>
+      <style>{`
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .max-w-sm { max-width: 21rem; }
+      `}</style>
+      <div className="flex flex-col lg:flex-row">
+        <div className="w-full lg:w-1/2 p-4 sm:p-6 md:p-8">
+          <div className="space-y-6">
             <div>
-              <label className="inline-flex items-center">
-                <input type="radio" className="form-radio" name="commentTrigger" value="keyword_match" checked={triggerType === 'keyword_match'} onChange={() => setTriggerType('keyword_match')} />
-                <span className="ml-2">Send DM only for comments with specific keyword(s)</span>
-              </label>
+              <label htmlFor="automationName" className="block text-sm font-semibold text-slate-700 mb-1.5">Automation Name</label>
+              <input id="automationName" type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g., 'Post Engagement DM'" className={inputStyles} />
             </div>
-            {triggerType === 'keyword_match' && (
-              <div className="mt-4">
-                <label htmlFor="keywords" className="block text-sm font-medium text-gray-700">Keyword(s)</label>
-                <input id="keywords" type="text" value={keywords} onChange={(e) => setKeywords(e.target.value)} placeholder="Price, Link, Shop" className="w-full mt-1 p-2 border rounded-md" />
-                <div className="flex items-center flex-wrap gap-2 text-sm mt-2">
-                  <span>Suggestions:</span>
-                  {keywordSuggestions.map((suggestion) => (
-                    <button key={suggestion} type="button" onClick={() => handleAddKeywordFromSuggestion(suggestion)} className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full">{suggestion}</button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
 
-        <div className="mb-6">
-          <label className="block text-xl font-semibold text-gray-800 mb-4">They'll get a response from you</label>
-          <div className="bg-gray-50 p-5 rounded-lg">
-            <label htmlFor="replyMessage" className="block text-sm font-medium text-gray-700 mb-2">A DM with this message:</label>
-            <textarea id="replyMessage" value={replyMessage} onChange={(e) => setReplyMessage(e.target.value)} placeholder="Write a message to send via DM..." rows={4} className="w-full p-2 border rounded-md mb-3" />
-            
-            {showLinkFields ? (
+            <div onClick={() => setPreviewMode('comments')} className="cursor-pointer">
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">1. Choose a Post to Automate</label>
+              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 min-h-[150px]">
+                {postsLoading ? (
+                  <div className="flex justify-center items-center h-full text-slate-500"><Loader2 className="w-6 h-6 animate-spin mr-2"/>Loading posts...</div>
+                ) : (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 max-h-52 overflow-y-auto hide-scrollbar">
+                    {posts.map((post) => (
+                      <button type="button" key={post.id} onClick={() => { setSelectedPostId(post.id); setSelectedPostThumbnail(post.thumbnail_url); setSelectedPostCaption(post.caption); }}
+                        className={`relative aspect-square rounded-lg overflow-hidden focus:outline-none ring-offset-2 ring-brand ${selectedPostId === post.id ? 'ring-2' : 'ring-0'}`}>
+                        <img src={post.thumbnail_url} alt={post.caption || 'Post thumbnail'} className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-black/30 opacity-0 hover:opacity-100 transition-opacity"></div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div onClick={() => setPreviewMode('comments')} className="cursor-pointer">
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">2. Set the Trigger</label>
               <div className="space-y-3">
-                <p className="text-xs text-gray-500">and an attached link:</p>
-                <div>
-                  <input type="text" value={linkTitle} onChange={(e) => setLinkTitle(e.target.value)} placeholder="Link Title (e.g., Shop Now)" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                </div>
-                <div>
-                  <input type="url" value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} placeholder="https://example.com/your-link" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                </div>
-                <button onClick={() => setShowLinkFields(false)} className="text-xs text-red-500 hover:underline">Remove Link</button>
-              </div>
-            ) : (
-              <button onClick={() => setShowLinkFields(true)} className="w-full flex items-center justify-center px-6 py-2 border border-dashed border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-100">
-                + Add A Link
-              </button>
-            )}
-
-            <label htmlFor="commentReplyText" className="block text-sm font-medium text-gray-700 mb-2 mt-4">And a public reply on their comment (optional):</label>
-            <input id="commentReplyText" type="text" value={commentReplyText} onChange={(e) => setCommentReplyText(e.target.value)} placeholder="e.g., Sent you a DM!" className="w-full p-2 border rounded-md" />
-          </div>
-        </div>
-        
-        {saveError && <div className="text-red-500 p-3 bg-red-100 rounded-md">{saveError}</div>}
-        {saveSuccess && <div className="text-green-500 p-3 bg-green-100 rounded-md">Automation saved successfully!</div>}
-        
-        <button onClick={handleSave} disabled={loading || postsLoading} className="w-full mt-6 px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg">
-          {loading ? 'Saving...' : 'Save Automation'}
-        </button>
-      </div>
-
-      {/* Right side: The Phone Preview */}
-      <div className="hidden md:flex items-center justify-center">
-        <div className="relative w-full max-w-xs h-[600px] bg-black rounded-[3rem] shadow-2xl border-[10px] border-gray-900 overflow-hidden flex flex-col">
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2/5 h-6 bg-gray-900 rounded-b-xl z-10"></div>
-          <div className="flex-grow w-full bg-white flex flex-col">
-            <div className="flex items-center p-3 border-b border-gray-200">
-              <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center mr-3"><User className="w-5 h-5 text-gray-500" /></div>
-              <span className="font-semibold text-sm">{account.clientName}</span>
-            </div>
-            {selectedPostThumbnail && (
-              <div className="p-3">
-                <div className="flex items-center"><img src={selectedPostThumbnail} alt="Post thumbnail" className="w-12 h-12 object-cover rounded-md mr-3" /><p className="text-xs text-gray-600 flex-1">{displayPostCaption}</p></div>
-              </div>
-            )}
-            <div className="border-b border-gray-200"></div>
-            <div className="flex-grow p-3 overflow-y-auto space-y-4">
-              <div className="flex items-start gap-2.5">
-                <div className="w-7 h-7 bg-gray-300 rounded-full flex items-center justify-center"><User className="w-4 h-4 text-gray-600" /></div>
-                <div className="flex flex-col">
-                  <div className="bg-gray-100 rounded-xl p-2.5"><p className="text-xs"><span className="font-semibold">random_user</span> {previewCommentText}</p></div>
-                  {commentReplyText && (
-                    <div className="flex items-start gap-2.5 mt-3">
-                       <div className="w-6 h-6 bg-gray-200 rounded-full flex items-center justify-center"><User className="w-4 h-4 text-gray-500" /></div>
-                       <div className="flex flex-col"><div className="bg-gray-100 rounded-xl p-2"><p className="text-xs"><span className="font-semibold">{account.clientName}</span> {commentReplyText}</p></div></div>
+                <label className={`flex items-start p-4 border rounded-lg cursor-pointer transition-colors ${triggerType === 'all_comments' ? 'bg-brand-50 border-brand' : 'border-slate-200 hover:border-slate-300'}`}>
+                  <input type="radio" name="triggerType" value="all_comments" checked={triggerType === 'all_comments'} onChange={() => setTriggerType('all_comments')} className="mt-1 text-brand focus:ring-brand"/>
+                  <span className="ml-3 text-sm"><span className="font-semibold text-slate-800">All Comments</span><br/>Send a DM to every person who comments.</span>
+                </label>
+                <label className={`flex flex-col p-4 border rounded-lg cursor-pointer transition-colors ${triggerType === 'keyword_match' ? 'bg-brand-50 border-brand' : 'border-slate-200 hover:border-slate-300'}`}>
+                  <div className="flex items-start">
+                    <input type="radio" name="triggerType" value="keyword_match" checked={triggerType === 'keyword_match'} onChange={() => setTriggerType('keyword_match')} className="mt-1 text-brand focus:ring-brand"/>
+                    <span className="ml-3 text-sm"><span className="font-semibold text-slate-800">Keyword Match</span><br/>Only send a DM if the comment includes specific words.</span>
+                  </div>
+                  {triggerType === 'keyword_match' && (
+                    <div className="mt-4 pl-7 w-full">
+                      <textarea value={keywords} onChange={(e) => setKeywords(e.target.value)} placeholder="e.g., price, link, info" rows={2} className={`${inputStyles} text-sm`} />
+                      <div className="flex items-baseline flex-wrap gap-2 text-xs mt-2">
+                        <span className="text-slate-500">Suggestions:</span>
+                        {keywordSuggestions.map(s => (<button key={s} type="button" onClick={() => handleAddKeyword(s)} className="px-2.5 py-1 bg-slate-200 text-slate-700 rounded-full font-medium hover:bg-slate-300">{s}</button>))}
+                      </div>
                     </div>
                   )}
-                </div>
+                </label>
               </div>
-               <div className="text-center text-xs text-gray-400 py-2">-- Private Message --</div>
-               <div className="flex items-end flex-col">
-                    <div className="bg-blue-500 text-white rounded-2xl rounded-br-none p-2.5 max-w-[80%]">
-                        <p className="text-sm">{replyMessage || "Your DM reply will appear here..."}</p>
+              
+              {/* --- NEW FOLLOWER ONLY CHECKBOX --- */}
+              <div className="mt-4 pl-1">
+                <label className="flex items-center space-x-3 cursor-pointer">
+                    <input 
+                        type="checkbox"
+                        checked={followerOnly}
+                        onChange={(e) => setFollowerOnly(e.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand"
+                    />
+                    <span className="text-sm text-slate-600 font-medium">Only trigger for followers</span>
+                </label>
+              </div>
+            </div>
+
+            <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">3. Configure the Reply</label>
+                <div className="space-y-4 p-4 border border-slate-200 rounded-lg bg-slate-50">
+                    <div onClick={() => setPreviewMode('comments')} className="cursor-pointer p-2 rounded-md hover:bg-slate-200/50">
+                        <label htmlFor="commentReplyText" className="block text-xs font-medium text-slate-600 mb-1">Public Comment Reply (Optional)</label>
+                        <input id="commentReplyText" type="text" value={commentReplyText} onChange={(e) => setCommentReplyText(e.target.value)} placeholder="e.g., Sent you a DM!" className={inputStyles} />
                     </div>
-                    {showLinkFields && linkUrl && linkTitle && (
-                        <a href="#" className="mt-2 bg-gray-100 border border-gray-200 rounded-lg p-2.5 max-w-[80%] w-full block text-left">
-                            <p className="font-semibold text-sm text-gray-800">{linkTitle}</p>
-                            <p className="text-xs text-gray-500">example.com</p>
-                        </a>
-                    )}
-               </div>
+                    <div onClick={() => setPreviewMode('dm')} className="cursor-pointer p-2 rounded-md hover:bg-slate-200/50">
+                        <div className="flex justify-between items-center mb-1">
+                            <label htmlFor="replyMessage" className="block text-xs font-medium text-slate-600">Private DM Reply</label>
+                            {/* ... (Personalize button logic) ... */}
+                        </div>
+                        <textarea ref={textareaRef} id="replyMessage" value={replyMessage} onChange={(e) => setReplyMessage(e.target.value)} placeholder="This message will be sent via DM..." rows={4} className={inputStyles} />
+                    </div>
+                    
+                    {/* --- NEW DELAYED REPLY INPUT --- */}
+                    <div onClick={() => setPreviewMode('dm')} className="cursor-pointer p-2 rounded-md hover:bg-slate-200/50">
+                        <label htmlFor="delay" className="block text-xs font-medium text-slate-600 mb-1">Delay DM Reply (Optional)</label>
+                        <div className="flex items-center">
+                          <input id="delay" type="number" value={delayInMinutes} onChange={(e) => setDelayInMinutes(Number(e.target.value))} className={`${inputStyles} w-28`} min="0" />
+                          <span className="ml-3 text-slate-500 text-sm">minutes</span>
+                        </div>
+                    </div>
+                </div>
             </div>
           </div>
         </div>
+
+        <div className="hidden lg:flex lg:w-1/2 items-center justify-center p-8 bg-slate-50 border-l border-slate-200">
+          <CommentPreview
+            account={account}
+            postThumbnailUrl={selectedPostThumbnail}
+            postCaption={selectedPostCaption}
+            userComment={previewCommentText}
+            botCommentReply={commentReplyText}
+            botDmReply={replyMessage}
+            previewMode={previewMode}
+          />
+        </div>
       </div>
-    </div>
+
+      <div className="flex flex-col sm:flex-row-reverse items-center gap-3 p-4 md:p-6 border-t border-slate-200 bg-white/50 backdrop-blur-sm sticky bottom-0">
+          <button type="submit" disabled={loading || postsLoading} className="w-full sm:w-auto inline-flex items-center justify-center px-5 py-2.5 bg-brand text-white text-sm font-semibold rounded-lg hover:bg-brand-600 transition-colors disabled:opacity-50">
+            {loading ? <Loader2 className="w-5 h-5 animate-spin"/> : <Save className="w-4 h-4 mr-2"/>}
+            {loading ? 'Saving...' : 'Save Automation'}
+          </button>
+          <button type="button" onClick={() => window.history.back()} className="w-full sm:w-auto inline-flex items-center justify-center px-5 py-2.5 bg-white border border-slate-300 text-slate-700 text-sm font-semibold rounded-lg hover:bg-slate-50 transition-colors">
+            <X className="w-4 h-4 mr-2"/>
+            Cancel
+          </button>
+          <div className="flex-grow">
+            {saveError && <div className="flex items-center text-red-600 text-sm font-medium"><AlertCircle className="w-4 h-4 mr-2"/>{saveError}</div>}
+            {saveSuccess && <div className="flex items-center text-green-600 text-sm font-medium"><CheckCircle className="w-4 h-4 mr-2"/>Automation saved!</div>}
+          </div>
+      </div>
+    </form>
   );
 };
 

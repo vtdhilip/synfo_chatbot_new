@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { Instagram, CheckCircle, XCircle } from 'lucide-react';
+import { Instagram, CheckCircle, XCircle, Loader2, ArrowRight } from 'lucide-react';
 
 // Define a type for the page data we expect from the backend
 interface FacebookPage {
@@ -21,13 +21,16 @@ const PageSelectionCard: React.FC<{ page: FacebookPage; onSelect: () => void; lo
   <button
     onClick={onSelect}
     disabled={loading}
-    className="w-full text-left p-4 border border-gray-200 rounded-lg flex items-center hover:bg-gray-50 hover:border-blue-500 transition-all duration-200 disabled:opacity-50"
+    className="group w-full text-left p-4 border border-slate-200 rounded-lg flex items-center justify-between hover:border-brand hover:bg-brand-50 transition-all duration-200 disabled:opacity-50"
   >
-    <img src={page.instagram_business_account.profile_picture_url} alt={page.instagram_business_account.username} className="w-12 h-12 rounded-full mr-4" />
-    <div>
-      <h3 className="font-semibold text-gray-800">{page.instagram_business_account.username}</h3>
-      <p className="text-sm text-gray-500">Connected to Facebook Page: {page.name}</p>
+    <div className="flex items-center">
+        <img src={page.instagram_business_account.profile_picture_url} alt={page.instagram_business_account.username} className="w-12 h-12 rounded-full mr-4" />
+        <div>
+        <h3 className="font-semibold text-slate-800">{page.instagram_business_account.username}</h3>
+        <p className="text-sm text-slate-500">Connected to: {page.name}</p>
+        </div>
     </div>
+    <ArrowRight className="w-5 h-5 text-slate-400 group-hover:text-brand transition-colors" />
   </button>
 );
 
@@ -35,8 +38,6 @@ const FacebookCallback: React.FC = () => {
   const [status, setStatus] = useState<'loading' | 'selecting' | 'connecting' | 'success' | 'error'>('loading');
   const [message, setMessage] = useState('Verifying your login...');
   const [pages, setPages] = useState<FacebookPage[]>([]);
-  // FIX: Removed unused 'selectedPage' state
-  // const [selectedPage, setSelectedPage] = useState<FacebookPage | null>(null);
 
   useEffect(() => {
     const processAuthCode = async () => {
@@ -55,9 +56,14 @@ const FacebookCallback: React.FC = () => {
           const result = await getFacebookPages({ code });
           
           const pageData = (result.data as { pages: FacebookPage[] }).pages;
-          setPages(pageData);
-          setStatus('selecting');
-          setMessage('Please select the Instagram account you want to connect.');
+          if (pageData && pageData.length > 0) {
+            setPages(pageData);
+            setStatus('selecting');
+            setMessage('Please select the Instagram account you want to connect.');
+          } else {
+            setStatus('error');
+            setMessage('No Instagram Business accounts found. Please ensure your Facebook page is linked to an Instagram Business account and try again.');
+          }
 
         } catch (err: any) {
           setStatus('error');
@@ -73,10 +79,8 @@ const FacebookCallback: React.FC = () => {
   }, []);
 
   const handleSelectPage = async (page: FacebookPage) => {
-    // FIX: No longer need to set the selectedPage state
-    // setSelectedPage(page); 
     setStatus('connecting');
-    setMessage(`Connecting ${page.instagram_business_account.username}...`);
+    setMessage(`Connecting @${page.instagram_business_account.username}...`);
 
     try {
         const functions = getFunctions();
@@ -87,7 +91,8 @@ const FacebookCallback: React.FC = () => {
             pageName: page.name,
             pageAccessToken: page.access_token,
             igId: page.instagram_business_account.id,
-            igUsername: page.instagram_business_account.username
+            igUsername: page.instagram_business_account.username,
+            igProfilePicUrl: page.instagram_business_account.profile_picture_url,
         });
 
         setStatus('success');
@@ -100,57 +105,50 @@ const FacebookCallback: React.FC = () => {
     }
   };
   
+  const StateCard = ({ icon, title, children }: { icon: React.ReactNode, title: string, children: React.ReactNode }) => (
+    <div className="bg-white rounded-xl shadow-lg w-full max-w-lg p-8 text-center border border-slate-200">
+        {icon}
+        <h2 className="text-2xl font-bold text-slate-800">{title}</h2>
+        {children}
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg p-6 text-center">
-        
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         {status === 'loading' && (
-          <>
-            <div className="animate-spin h-8 w-8 text-blue-600 mx-auto mb-4">
-                <svg fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-            </div>
-            <h2 className="text-xl font-semibold text-gray-800">{message}</h2>
-          </>
+            <StateCard icon={<Loader2 className="mx-auto h-12 w-12 text-brand animate-spin mb-4" />} title="Verifying Login...">
+                <p className="text-slate-500 mt-2">{message}</p>
+            </StateCard>
         )}
 
         {status === 'selecting' && (
-          <>
-            <Instagram className="mx-auto h-10 w-10 text-pink-500 mb-2" />
-            <h2 className="text-2xl font-bold text-gray-800 mb-2">Select an Account</h2>
-            <p className="text-gray-500 mb-6">{message}</p>
-            <div className="space-y-3">
-              {pages.map(page => (
-                <PageSelectionCard key={page.id} page={page} onSelect={() => handleSelectPage(page)} loading={false} />
-              ))}
-            </div>
-          </>
-        )}
-
-        {status === 'connecting' && (
-             <>
-                <div className="animate-spin h-8 w-8 text-blue-600 mx-auto mb-4">
-                    <svg fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+            <StateCard icon={<Instagram className="mx-auto h-12 w-12 text-pink-500 mb-4" />} title="Select an Account">
+                <p className="text-slate-500 mt-2 mb-6">{message}</p>
+                <div className="space-y-3 text-left">
+                {pages.map(page => (
+                    <PageSelectionCard key={page.id} page={page} onSelect={() => handleSelectPage(page)} loading={false} />
+                ))}
                 </div>
-                <h2 className="text-xl font-semibold text-gray-800">{message}</h2>
-             </>
+            </StateCard>
+        )}
+        
+        {status === 'connecting' && (
+            <StateCard icon={<Loader2 className="mx-auto h-12 w-12 text-brand animate-spin mb-4" />} title="Connecting...">
+                <p className="text-slate-500 mt-2">{message}</p>
+            </StateCard>
         )}
 
         {status === 'success' && (
-            <>
-                <CheckCircle className="mx-auto h-12 w-12 text-green-500 mb-3" />
-                <h2 className="text-2xl font-bold text-gray-800">Connection Successful!</h2>
-                <p className="text-gray-600 mt-2">{message}</p>
-            </>
+            <StateCard icon={<CheckCircle className="mx-auto h-12 w-12 text-green-500 mb-4" />} title="Connection Successful!">
+                <p className="text-slate-500 mt-2">{message}</p>
+            </StateCard>
         )}
 
         {status === 'error' && (
-            <>
-                <XCircle className="mx-auto h-12 w-12 text-red-500 mb-3" />
-                <h2 className="text-2xl font-bold text-gray-800">Connection Failed</h2>
-                <p className="text-gray-600 mt-2">{message}</p>
-            </>
+            <StateCard icon={<XCircle className="mx-auto h-12 w-12 text-red-500 mb-4" />} title="Connection Failed">
+                <p className="text-slate-500 mt-2">{message}</p>
+            </StateCard>
         )}
-      </div>
     </div>
   );
 };

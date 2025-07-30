@@ -1,38 +1,57 @@
 // src/config/plans.ts
 
 // Define a type for plan capabilities
-export interface PlanCapabilities {// Still keep this for specific DM limits if needed elsewhere
+export interface PlanCapabilities {
+  name: string; // Added for display purposes
   canUseChatflow: boolean;
-  maxAccounts: number | 'Infinity';
+  maxAccounts: number | 'unlimited'; // Switched to 'unlimited' string for clarity
   canUseAdvancedChatflow: boolean;
-  canUseLeadQualification: boolean;
-  canUseSegmentation: boolean;
-  maxAutomations: number | 'unlimited'; // Limit for total automations
+  maxAutomations: number | 'unlimited'; // This is now a monthly limit
+  analyticsRetentionDays: 7 | 30 | 90 | 'unlimited';
+  // Add new feature flags here as you build them
+  canUseSmartRotation?: boolean;
+  canUseAiReplies?: boolean;
+  canUseWebhooks?: boolean;
 }
 
 // Define a union type for valid plan IDs
-export type PlanId = 'free' | 'basic' | 'professional' | 'enterprise';
+export type PlanId = 'free' | 'basic' | 'pro' | 'enterprise';
 
-// Define planFeatures with explicit type and index signature
+// Define planFeatures with the new, correct data
 export const planFeatures: Record<PlanId, PlanCapabilities> = {
   'free': {
-    canUseChatflow: false, maxAccounts: 1, canUseAdvancedChatflow: false,
-    canUseLeadQualification: false, canUseSegmentation: false,
-    maxAutomations: 10, // Free plan allows 1000 total automation executions per month
+    name: 'Free',
+    canUseChatflow: true,
+    maxAccounts: 1,
+    canUseAdvancedChatflow: false,
+    maxAutomations: 5,
+    analyticsRetentionDays: 7,
   },
   'basic': {
-    canUseChatflow: true, maxAccounts: 5, canUseAdvancedChatflow: false,
-    canUseLeadQualification: false, canUseSegmentation: false,
-    maxAutomations: 5000, // Basic plan allows 5000 total automation executions per month
+    name: 'BASIC',
+    canUseChatflow: true,
+    maxAccounts: 1,
+    canUseAdvancedChatflow: false,
+    maxAutomations: 15, // Corrected to 15 flows/month
+    analyticsRetentionDays: 30,
   },
-  'professional': {
-    canUseChatflow: true, maxAccounts: Infinity, canUseAdvancedChatflow: true,
-    canUseLeadQualification: true, canUseSegmentation: true,
-    maxAutomations: 'unlimited', // Professional plan has unlimited automations
+  'pro': {
+    name: 'PRO',
+    canUseChatflow: true,
+    maxAccounts: 3,
+    canUseAdvancedChatflow: true,
+    maxAutomations: 50, // Corrected to 50 flows/month
+    analyticsRetentionDays: 90,
   },
   'enterprise': {
-    canUseChatflow: true, maxAccounts: Infinity, canUseAdvancedChatflow: true,
-    canUseLeadQualification: true, canUseSegmentation: true,
-    maxAutomations: 'unlimited', // Enterprise plan has unlimited automations
+    name: 'ENTERPRISE',
+    canUseChatflow: true,
+    maxAccounts: 'unlimited',
+    canUseAdvancedChatflow: true,
+    maxAutomations: 'unlimited',
+    analyticsRetentionDays: 'unlimited',
+    canUseSmartRotation: true,
+    canUseAiReplies: true,
+    canUseWebhooks: true,
   },
 };

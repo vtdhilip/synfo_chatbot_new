@@ -1,5 +1,7 @@
 // src/types/index.ts
 
+import { Timestamp } from 'firebase/firestore';
+
 // === Account Interface ===
 export interface Account {
   id: string;
@@ -14,7 +16,18 @@ export interface Account {
   flow?: ChatFlow;
   dmAutomations?: SimpleKeywordAutomation[];
   commentAutomations?: CommentAutomation[];
-  storyAutomation?: any;
+  storyAutomations?: StoryAutomation[]; // This line is correct
+  subscription?: {
+    planId: string;
+    status: 'active' | 'inactive' | 'cancelled' | 'trialing' | 'pending';
+    razorpayPaymentId?: string;
+    razorpayOrderId?: string;
+    amountPaid?: number;
+    currency?: string;
+    subscribedAt?: Timestamp;
+
+    profilePictureUrl?: string;
+  };
 }
 
 // === Simple DM Automation Types ===
@@ -33,10 +46,10 @@ export interface SimpleKeywordAutomation {
   type: 'simple_keyword';
   keywords: string[];
   reply: SimpleKeywordReply;
+  delayInMinutes?: number;
 }
 
 // === Comment Automation Types ===
-// FIX: Added optional link property to the comment reply
 export interface CommentReply {
   text: string;
   link?: {
@@ -59,6 +72,33 @@ export interface CommentAutomation {
   keywords: string[];
   reply: CommentReply;
   commentReplyText?: string;
+  delayInMinutes?: number;
+
+  followerOnly: boolean; 
+}
+
+// === Story Automation Types ===
+export interface StoryReply {
+  text: string;
+  link?: {
+    url: string;
+    title: string;
+  };
+}
+
+export type StoryTriggerType = 'all_replies' | 'keyword_match';
+
+export interface StoryAutomation {
+  id: string;
+  name: string;
+  enabled: boolean;
+  type: 'story_automation';
+  storyId: string | null; // <-- ADDED: null means it applies to all stories
+  storyThumbnailUrl?: string; // <-- ADDED
+  triggerType: StoryTriggerType;
+  keywords: string[];
+  reply: StoryReply;
+  delayInMinutes?: number;
 }
 
 // === Instagram Post Type (for fetching posts) ===
@@ -70,38 +110,48 @@ export interface InstagramPost {
   permalink: string;
   media_type: string;
 }
+export interface InstagramStory {
+  id: string;
+  thumbnail_url: string;
+  media_url: string;
+  permalink: string;
+  media_type: string;
+}
 
 // === Chat Flow (Drag-and-Drop Editor) Types ===
 export type NodeType = 'start' | 'textMessage' | 'question' | 'condition' | 'apiCall' | 'humanHandoff';
 
 export interface FlowNodeData {
-    label?: string;
-    keyword?: string;
-    options?: { label: string; payload: string }[];
-    url?: string;
-    method?: 'GET' | 'POST';
+  label?: string;
+  keyword?: string;
+  options?: { label: string; payload: string }[];
+  url?: string;
+  method?: 'GET' | 'POST';
 }
 
 export interface FlowNode {
-    id: string;
-    type: NodeType;
-    position: { x: number; y: number; };
-    data: FlowNodeData;
-    sourcePosition?: 'left' | 'right' | 'top' | 'bottom';
-    targetPosition?: 'left' | 'right' | 'top' | 'bottom';
+  id: string;
+  type: NodeType;
+  position: { x: number; y: number; };
+  data: FlowNodeData;
+  sourcePosition?: 'left' | 'right' | 'top' | 'bottom';
+  targetPosition?: 'left' | 'right' | 'top' | 'bottom';
 }
 
+
+
+
 export interface FlowEdge {
-    id: string;
-    source: string;
-    target: string;
-    sourceHandle?: string;
-    type?: string;
-    animated?: boolean;
-    style?: React.CSSProperties;
+  id: string;
+  source: string;
+  target: string;
+  sourceHandle?: string;
+  type?: string;
+  animated?: boolean;
+  style?: React.CSSProperties;
 }
 
 export interface ChatFlow {
-    nodes: FlowNode[];
-    edges: FlowEdge[];
+  nodes: FlowNode[];
+  edges: FlowEdge[];
 }

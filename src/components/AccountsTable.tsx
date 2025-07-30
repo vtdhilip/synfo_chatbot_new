@@ -1,91 +1,131 @@
-// In src/components/AccountsTable.tsx
+// src/components/AccountsTable.tsx
 
-import { LayoutDashboard, Trash2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { LayoutDashboard, Trash2, Bot,  AlertTriangle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { type Account } from '../types';
 
-// --- FIX: Removed onEdit and onGetAuthLink from props ---
 interface AccountsTableProps {
   accounts: Account[];
-  loading: boolean;
   onDelete: (id: string) => void;
 }
 
-const AccountsTable: React.FC<AccountsTableProps> = ({
-  accounts,
-  loading,
-  onDelete,
-}) => {
-  const { userRole } = useAuth();
+// A new sub-component for the deletion confirmation modal with the requested styling
+const DeleteConfirmationModal = ({ accountName, onConfirm, onCancel }: { accountName: string, onConfirm: () => void, onCancel: () => void }) => (
+    <div className="fixed inset-0 bg-black/30 backdrop-blur-md flex items-center justify-center z-50 p-4">
+        <div 
+            className="bg-gradient-to-br from-violet-50 via-orange-50 to-sky-50 rounded-xl shadow-2xl w-full max-w-md p-6 text-center border border-white/30"
+            onClick={(e) => e.stopPropagation()}
+        >
+            <div className="mx-auto flex items-center justify-center h-14 w-14 rounded-full bg-red-100 mb-4">
+                <AlertTriangle className="h-8 w-8 text-red-500" />
+            </div>
+            <h2 className="text-2xl font-bold text-slate-900">
+                Are you sure?
+            </h2>
+            <p className="text-slate-500 my-4">
+                This will permanently delete the account for <span className="font-semibold text-slate-700">{accountName}</span> and all of its automations. This action cannot be undone.
+            </p>
+            <div className="flex justify-center gap-4 mt-6">
+                <button
+                    onClick={onCancel}
+                    className="w-full bg-white/50 text-slate-800 font-semibold py-2.5 px-4 rounded-lg border border-slate-300 hover:bg-white/80 transition-colors"
+                >
+                    Cancel
+                </button>
+                <button
+                    onClick={onConfirm}
+                    className="w-full bg-red-600 text-white font-semibold py-2.5 px-4 rounded-lg hover:bg-red-700 transition-colors"
+                >
+                    Yes, Delete Account
+                </button>
+            </div>
+        </div>
+    </div>
+);
 
-  if (loading) {
-    return <div className="text-center p-8 text-gray-500">Loading accounts...</div>;
-  }
+
+const AccountsTable: React.FC<AccountsTableProps> = ({ accounts, onDelete }) => {
+  const { userRole } = useAuth();
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
+
+  const handleDeleteClick = (account: Account) => {
+    setAccountToDelete(account);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = () => {
+    if (accountToDelete) {
+      onDelete(accountToDelete.id);
+    }
+    setShowDeleteModal(false);
+    setAccountToDelete(null);
+  };
 
   if (accounts.length === 0) {
     return (
-      <div className="text-center p-12 bg-gray-50 rounded-lg border-2 border-dashed">
-        <h3 className="text-lg font-medium text-gray-900">No Accounts Connected</h3>
-        <p className="mt-1 text-sm text-gray-500">Click "Add Account" to get started.</p>
+      <div className="text-center py-20 px-6 bg-white rounded-xl shadow-lg border border-slate-200">
+        <Bot className="mx-auto h-12 w-12 text-slate-300" />
+        <h3 className="mt-4 text-lg font-semibold text-slate-800">No Accounts Found</h3>
+        <p className="mt-1 text-slate-500">Get started by adding your first Instagram account.</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200">
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Account</th>
-              {userRole === 'admin' && (
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Agency</th>
-              )}
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {accounts.map((account) => (
-              <tr key={account.id} className="hover:bg-gray-50 transition-colors">
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="font-medium text-gray-900">{account.clientName}</div>
-                  <div className="text-sm text-gray-500">ID: {account.instagramPageId}</div>
-                </td>
-                {userRole === 'admin' && (
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{account.agencyName}</td>
-                )}
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                      account.subscriptionStatus === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                    }`}>
-                    {account.subscriptionStatus}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <div className="flex items-center justify-end space-x-1">
-                    <Link
-                      to={`/dashboard/${account.id}`}
-                      className="flex items-center px-3 py-1.5 text-xs font-semibold text-white bg-gray-700 rounded-md hover:bg-gray-800 transition-colors"
-                      title="Go to Dashboard"
-                    >
-                      <LayoutDashboard className="w-3 h-3 mr-1.5" />
-                      Dashboard
-                    </Link>
-
-                    <button onClick={() => onDelete(account.id)} className="p-2 text-red-500 hover:bg-red-100 rounded-lg transition-colors" title="Delete Account">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                    {/* --- FIX: Edit and Reconnect buttons have been removed --- */}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <>
+      <div className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
+        <ul className="divide-y divide-slate-200">
+          {accounts.map((account) => (
+            <li key={account.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+              <div className="flex items-center min-w-0">
+                <img 
+                  src={(account as any).profilePictureUrl || `https://ui-avatars.com/api/?name=${account.clientName}&background=random`} 
+                  alt={account.clientName} 
+                  className="w-10 h-10 rounded-full object-cover mr-4 flex-shrink-0"
+                />
+                <div className="min-w-0">
+                  <p className="font-semibold text-slate-800 truncate">{account.clientName}</p>
+                  {userRole === 'admin' && (
+                    <p className="text-sm text-slate-500 truncate">Agency: {account.agencyName}</p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center space-x-2 sm:space-x-4 ml-4 flex-shrink-0">
+                <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                    account.subscriptionStatus === 'active' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                  }`}>
+                  {account.subscriptionStatus}
+                </span>
+                <Link
+                  to={`/dashboard/${account.id}`}
+                  className="p-2.5 rounded-full text-slate-500 hover:text-brand hover:bg-brand-50 transition-colors"
+                  title="Go to Dashboard"
+                >
+                  <LayoutDashboard className="w-5 h-5" />
+                </Link>
+                <button 
+                  onClick={() => handleDeleteClick(account)} 
+                  className="p-2.5 rounded-full text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors" 
+                  title="Delete Account"
+                >
+                  <Trash2 className="w-5 h-5" />
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
       </div>
-    </div>
+      {showDeleteModal && accountToDelete && (
+        <DeleteConfirmationModal 
+            accountName={accountToDelete.clientName}
+            onConfirm={confirmDelete}
+            onCancel={() => setShowDeleteModal(false)}
+        />
+      )}
+    </>
   );
 };
 
