@@ -1,6 +1,6 @@
 // src/pages/LoginPage.tsx
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { auth, db } from '../firebase';
@@ -8,9 +8,10 @@ import {
   signInWithEmailAndPassword,
   GoogleAuthProvider,
   FacebookAuthProvider,
-  signInWithPopup
+  signInWithPopup,
+  User, // Import the User type
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { Mail, Lock, AlertCircle, Loader2, Eye, EyeOff } from 'lucide-react';
 
 // SVG Icon for Google
@@ -33,7 +34,7 @@ const LoginPage = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [socialLoading, setSocialLoading] = useState<'google' | 'facebook' | null>(null);
-  const [showPassword, setShowPassword] = useState(false); // State for password visibility
+  const [showPassword, setShowPassword] = useState(false);
 
   const finalRedirectUrl = new URLSearchParams(location.search).get('redirect_to') || '/';
 
@@ -43,45 +44,61 @@ const LoginPage = () => {
     }
   }, [currentUser, navigate, finalRedirectUrl]);
 
-  const handleSocialSignIn = useCallback(async (result: any, path: string) => {
-    const user = result.user;
+  // ✅ This function now creates the complete user profile, same as the sign-up page
+  const handleUserProfileCreation = async (user: User, path: string) => {
     const userDocRef = doc(db, 'users', user.uid);
-    const docSnap = await getDoc(userDocRef);
 
-    if (!docSnap.exists()) {
-      await setDoc(userDocRef, {
+    const freePlanPermissions = {
+        flowLimit: 1,
+        executionLimit: 1000, 
+        pageLimit: 1,
+        hasDelayedReplies: false,
+        hasLinkEmbed: false,
+        hasFollowerCheck: false,
+        allowsCombinedReply: false,
+        hasAnalytics: false,
+    };
+
+    await setDoc(userDocRef, {
+        uid: user.uid,
         email: user.email,
-        displayName: user.displayName,
+        agencyName: user.displayName || `User-${user.uid.substring(0, 5)}`,
         role: 'agency',
-        agencyName: `${user.displayName}'s Agency` || 'New Agency',
-        createdAt: new Date()
-      });
-    }
+        plan: 'Free',
+        permissions: freePlanPermissions,
+        subscription: {
+            planId: 'Free',
+            status: 'active',
+        },
+        createdAt: serverTimestamp(),
+    });
+    
     navigate(path, { replace: true });
-  }, [navigate]);
-
-  const handleGoogleSignIn = () => {
-    setSocialLoading('google');
-    setError('');
-    const provider = new GoogleAuthProvider();
-    signInWithPopup(auth, provider)
-      .then((result) => handleSocialSignIn(result, finalRedirectUrl))
-      .catch(async (error) => {
-        // Handle account linking flow
-        setError(error.message);
-      })
-      .finally(() => setSocialLoading(null));
   };
 
-  const handleFacebookSignIn = () => {
-    setSocialLoading('facebook');
+  const processSocialLogin = async (provider: GoogleAuthProvider | FacebookAuthProvider, providerName: 'google' | 'facebook') => {
+    setSocialLoading(providerName);
     setError('');
-    const provider = new FacebookAuthProvider();
-    signInWithPopup(auth, provider)
-      .then((result) => handleSocialSignIn(result, finalRedirectUrl))
-      .catch((err) => setError(err.message))
-      .finally(() => setSocialLoading(null));
+    try {
+        const result = await signInWithPopup(auth, provider);
+        const userDocRef = doc(db, 'users', result.user.uid);
+        const docSnap = await getDoc(userDocRef);
+        
+        // If the user is new, create their full profile with permissions
+        if (!docSnap.exists()) {
+            await handleUserProfileCreation(result.user, finalRedirectUrl);
+        } else {
+            // If they are a returning user, just navigate
+            navigate(finalRedirectUrl, { replace: true });
+        }
+    } catch (err: any) {
+        console.error(`${providerName} sign-in error:`, err);
+        setError(`Failed to sign in with ${providerName}. ${err.message}`);
+    } finally {
+        setSocialLoading(null);
+    }
   };
+
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -119,10 +136,10 @@ const LoginPage = () => {
                 </div>
 
                 <div className="space-y-3">
-                    <button type="button" onClick={handleGoogleSignIn} className={socialButtonStyles} disabled={!!socialLoading}>
+                    <button type="button" onClick={() => processSocialLogin(new GoogleAuthProvider(), 'google')} className={socialButtonStyles} disabled={!!socialLoading}>
                         {socialLoading === 'google' ? <Loader2 className="w-5 h-5 animate-spin" /> : <><GoogleIcon /><span className="ml-2">Continue with Google</span></>}
                     </button>
-                    <button type="button" onClick={handleFacebookSignIn} className={socialButtonStyles} disabled={!!socialLoading}>
+                    <button type="button" onClick={() => processSocialLogin(new FacebookAuthProvider(), 'facebook')} className={socialButtonStyles} disabled={!!socialLoading}>
                         {socialLoading === 'facebook' ? <Loader2 className="w-5 h-5 animate-spin" /> : <><FacebookIcon /><span className="ml-2">Continue with Facebook</span></>}
                     </button>
                 </div>
@@ -145,7 +162,7 @@ const LoginPage = () => {
                             placeholder="Password" 
                             value={password} 
                             onChange={(e) => setPassword(e.target.value)} 
-                            className={`${inputBaseStyles} pr-11`} // Add padding for the icon
+                            className={`${inputBaseStyles} pr-11`}
                             required 
                             disabled={loading} 
                         />

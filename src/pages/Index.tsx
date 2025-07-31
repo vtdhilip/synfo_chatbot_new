@@ -14,7 +14,8 @@ import { Plus, Search, ChevronDown, Loader2, ArrowRight } from 'lucide-react';
 const Index = () => {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
-  const { currentUser, userRole, subscription } = useAuth();
+  // ✅ FIX: Get userData and permissions from useAuth
+  const { currentUser, userRole, userData, permissions } = useAuth();
   const [isAddAccountModalOpen, setIsAddAccountModalOpen] = useState(false);
   const [isInstagramConnectModalOpen, setIsInstagramConnectModalOpen] = useState(false);
   const [message, setMessage] = useState("");
@@ -23,7 +24,6 @@ const Index = () => {
   const [filterStatus, setFilterStatus] = useState("all");
   const [monthlyAutomationExecutions, setMonthlyAutomationExecutions] = useState(0);
 
-  const [plans, setPlans] = useState<any[]>([]);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const navigate = useNavigate();
 
@@ -71,15 +71,7 @@ const Index = () => {
     return () => unsubscribe();
   }, [currentUser, userRole]);
 
-
-  useEffect(() => {
-    const plansQuery = query(collection(db, "plans"), orderBy("displayOrder"));
-    const unsubscribe = onSnapshot(plansQuery, (snapshot) => {
-        const plansData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setPlans(plansData);
-    });
-    return () => unsubscribe();
-  }, []);
+  // ❗ REMOVED: Unnecessary useEffect to fetch plans. The limit now comes from permissions.
 
   useEffect(() => {
     const fetchMonthlyAutomationExecutions = async () => {
@@ -141,10 +133,19 @@ const Index = () => {
     (filterStatus === "all" || account.subscriptionStatus === filterStatus)
   );
 
-  const currentPlanId = subscription?.planId || 'free';
-  const currentPlanDetails = plans.find(p => p.id === currentPlanId) || { name: 'Free Plan', maxAutomations: 1000 };
+  // ✅ FIX: Use the same robust logic as the Dashboard page
+  let executionLimit: number | 'unlimited' = 'unlimited';
+  const limitFromDb = permissions?.executionLimit;
 
-  const automationLimit = currentPlanDetails.maxAutomations;
+  if (userData?.plan?.toLowerCase() === 'free') {
+      executionLimit = 1000;
+  } else if (typeof limitFromDb === 'string' && !isNaN(parseInt(limitFromDb, 10))) {
+      executionLimit = parseInt(limitFromDb, 10);
+  } else if (typeof limitFromDb === 'number') {
+      executionLimit = limitFromDb;
+  }
+
+  const planName = userData?.plan ? `${userData.plan.charAt(0).toUpperCase() + userData.plan.slice(1)} Plan` : 'Free Plan';
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -165,10 +166,10 @@ const Index = () => {
         <div className="bg-white rounded-xl shadow-lg border border-slate-200 p-6 mb-8">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <p className="text-sm font-semibold text-brand">{currentPlanDetails.name}</p>
+                    <p className="text-sm font-semibold text-brand">{planName}</p>
                     <p className="text-2xl font-bold text-slate-800 mt-1">
                         {monthlyAutomationExecutions.toLocaleString()}
-                        <span className="text-lg font-medium text-slate-500"> / {typeof automationLimit === 'number' ? automationLimit.toLocaleString() : 'Unlimited'}</span>
+                        <span className="text-lg font-medium text-slate-500"> / {executionLimit === 'unlimited' ? 'Unlimited' : executionLimit.toLocaleString()}</span>
                     </p>
                     <p className="text-sm text-slate-500">Monthly Automations Used</p>
                 </div>
@@ -217,12 +218,11 @@ const Index = () => {
           }}
         />
 
-        {/* --- THIS IS THE CORRECTED PART --- */}
         <UpgradeModal
             isOpen={showUpgradeModal}
             onClose={() => setShowUpgradeModal(false)}
-            planName={currentPlanDetails.name}
-            limit={currentPlanDetails.maxAutomations}
+            planName={planName}
+            limit={executionLimit === 'unlimited' ? 999999 : executionLimit}
         />
       </div>
     </div>

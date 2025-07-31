@@ -209,6 +209,7 @@ export const instagramWebhook = onRequest({
 
                         const canAutomate = await attemptAutomation();
                         if (canAutomate) {
+
                             await handleReply({
                                 delayInMinutes: automationToExecute.delayInMinutes || 0,
                                 metaPageToken,
@@ -216,6 +217,8 @@ export const instagramWebhook = onRequest({
                                 messageText: automationToExecute.reply.text,
                                 clientId,
                                 analyticsEventType: analyticsEventType,
+                                linkUrl: automationToExecute.reply.link?.url,
+                                linkTitle: automationToExecute.reply.link?.title,
                             });
                         }
                     }
@@ -299,7 +302,9 @@ export const instagramWebhook = onRequest({
                                     recipientId: commenterId,
                                     messageText: automationToExecute.reply.text,
                                     clientId,
-                                    analyticsEventType: 'automated_comments'
+                                    analyticsEventType: 'automated_comments',
+                                    linkUrl: automationToExecute.reply.link?.url,
+                                    linkTitle: automationToExecute.reply.link?.title,
                                 });
                             }
 
@@ -1257,7 +1262,6 @@ export const createPortalSession = onCall(async (request: CallableRequest) => {
     }
 });
 
-// In functions/src/index.ts
 
 export const sendDelayedReply = onRequest(async (req, res) => {
     if (req.method !== 'POST') {
@@ -1266,17 +1270,42 @@ export const sendDelayedReply = onRequest(async (req, res) => {
     }
 
     try {
-        const { metaPageToken, senderId, messageText } = req.body;
+       
+        // ✅ DESTRUCTURE THE NEW LINK PARAMETERS
+        const { metaPageToken, senderId, messageText, linkUrl, linkTitle } = req.body;
         if (!metaPageToken || !senderId || !messageText) {
-            console.error("[DELAYED_REPLY] Missing required parameters in task payload.");
+            console.error("[DELAYED_REPLY] Missing required parameters.");
             res.status(400).send("Bad Request: Missing parameters.");
             return;
         }
 
+        // --- CONSTRUCT THE MESSAGE PAYLOAD ---
+        let messagePayload: any = { text: messageText };
+
+        // If a URL and title for a button are provided, format it for Instagram
+        if (linkUrl && linkTitle) {
+            messagePayload = {
+                attachment: {
+                    type: "template",
+                    payload: {
+                        template_type: "generic",
+                        elements: [{
+                            title: messageText, // The main text of the message
+                            buttons: [{
+                                type: "web_url",
+                                url: linkUrl,
+                                title: linkTitle, // The text on the button
+                            }]
+                        }]
+                    }
+                }
+            };
+        }
+
         await axios.post(`https://graph.facebook.com/v20.0/me/messages`, {
             recipient: { id: senderId },
-            message: { text: messageText },
-            messaging_type: "RESPONSE",
+            message: messagePayload, // ✅ USE THE NEW PAYLOAD
+            messaging_type: "RESPONSE", // or MESSAGE_TAG if outside 24h window
             access_token: metaPageToken,
         });
 
@@ -1289,9 +1318,6 @@ export const sendDelayedReply = onRequest(async (req, res) => {
     }
 });
 
-
-
-
 async function handleReply(payload: {
     delayInMinutes: number;
     metaPageToken: string;
@@ -1299,24 +1325,47 @@ async function handleReply(payload: {
     messageText: string;
     clientId: string;
     analyticsEventType: any;
+    linkUrl?: string; // ✅ ADD OPTIONAL LINK PARAMETERS
+    linkTitle?: string;
 }) {
-    const { delayInMinutes, metaPageToken, recipientId, messageText, clientId, analyticsEventType } = payload;
+    // ✅ DESTRUCTURE THE NEW PARAMETERS
+    const { delayInMinutes, metaPageToken, recipientId, messageText, clientId, analyticsEventType, linkUrl, linkTitle } = payload;
+    let messagePayload: any = { text: messageText };
+
+
+
+    if (linkUrl && linkTitle) {
+        messagePayload = {
+            attachment: {
+                type: "template",
+                payload: {
+                    template_type: "generic",
+                    elements: [{
+                        title: messageText, // The main text of the message
+                        buttons: [{
+                            type: "web_url",
+                            url: linkUrl,
+                            title: linkTitle, // The text on the button
+                        }]
+                    }]
+                }
+            }
+        };
+    }
 
     if (delayInMinutes > 0) {
         // --- Schedule a delayed reply via Cloud Tasks ---
-        
-        // --- CORRECTED: Use environment variables for project and location ---
         const project = 'synapticinfo-chatbot';
-        const location = 'asia-south1'; // Or process.env.FUNCTION_REGION if your functions are in different regions
+        const location = 'asia-south1';
         const queue = 'delayed-replies-queue';
-
+        const serviceUrl = 'https://asia-south1-synapticinfo-chatbot.cloudfunctions.net/sendDelayedReply';
+        const serviceAccountEmail = `${project}@appspot.gserviceaccount.com`;
         const queuePath = tasksClient.queuePath(project, location, queue);
-        // This now constructs the correct URL for your project
-        const serviceUrl = `https://${location}-${project}.cloudfunctions.net/sendDelayedReply`;
         const scheduleTimeInSeconds = Math.floor(Date.now() / 1000) + (delayInMinutes * 60);
 
-        const taskPayload = { metaPageToken, senderId: recipientId, messageText };
-
+        // ✅ INCLUDE THE NEW PARAMETERS IN THE TASK PAYLOAD
+        const taskPayload = { metaPageToken, senderId: recipientId, messageText, linkUrl, linkTitle };
+        
         try {
             await tasksClient.createTask({
                 parent: queuePath,
@@ -1326,6 +1375,9 @@ async function handleReply(payload: {
                         url: serviceUrl,
                         headers: { 'Content-Type': 'application/json' },
                         body: Buffer.from(JSON.stringify(taskPayload)).toString('base64'),
+                        oidcToken: {
+                            serviceAccountEmail: serviceAccountEmail,
+                        },
                     },
                     scheduleTime: { seconds: scheduleTimeInSeconds },
                 },
@@ -1336,14 +1388,17 @@ async function handleReply(payload: {
         }
 
     } else {
-        // --- Send instantly ---
-        await axios.post(`https://graph.facebook.com/v20.0/me/messages`, {
-            recipient: { id: recipientId },
-            message: { text: messageText },
-            messaging_type: "RESPONSE",
-            access_token: metaPageToken,
-        });
-        console.log(`[WEBHOOK] Sent instant reply to ${recipientId}.`);
+       try {
+            await axios.post(`https://graph.facebook.com/v20.0/me/messages`, {
+                recipient: { id: recipientId },
+                message: messagePayload, // ✅ Use the correctly formatted payload
+                messaging_type: "RESPONSE",
+                access_token: metaPageToken,
+            });
+            console.log(`[WEBHOOK] Sent instant reply to ${recipientId}.`);
+        } catch (error: any) {
+            console.error("[ERROR] Failed to send instant reply:", error.response?.data || error.message);
+        }
     }
     await publishAnalyticsEvent(clientId, analyticsEventType);
 }
