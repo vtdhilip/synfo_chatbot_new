@@ -7,7 +7,8 @@ import {
 } from '../types';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { v4 as uuidv4 } from 'uuid';
-import { Save, X, AlertCircle, CheckCircle, Loader2, User, MessageSquare, Heart, Send, Bookmark, MoreHorizontal, ArrowLeft, Video, SquarePlus, } from 'lucide-react';
+import { useAuth } from '../context/AuthContext'; // Import useAuth
+import { Save, X, AlertCircle, CheckCircle, Loader2, User, MessageSquare, Heart, Send, Bookmark, MoreHorizontal, ArrowLeft, Video, SquarePlus, Lock } from 'lucide-react';
 
 interface CommentAutomationEditorProps {
   account: Account;
@@ -120,6 +121,9 @@ const CommentPreview: React.FC<{
 
 
 const CommentAutomationEditor: React.FC<CommentAutomationEditorProps> = ({ account, existingAutomation, onSave }) => {
+  // --- Get permissions from AuthContext ---
+  const { permissions } = useAuth();
+
   const [name, setName] = useState('');
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   const [selectedPostThumbnail, setSelectedPostThumbnail] = useState<string | undefined>(undefined);
@@ -136,9 +140,12 @@ const CommentAutomationEditor: React.FC<CommentAutomationEditorProps> = ({ accou
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [previewMode, setPreviewMode] = useState<'comments' | 'dm'>('comments');
 
-  // --- NEW: State for new features ---
   const [followerOnly, setFollowerOnly] = useState(false);
   const [delayInMinutes, setDelayInMinutes] = useState(0);
+
+  // --- Create boolean flags to determine if features are locked ---
+  const isFollowerCheckLocked = !permissions?.hasFollowerCheck;
+  const isDelayLocked = !permissions?.hasDelayedReplies;
 
   const keywordSuggestions = ['price', 'link', 'info', 'shop', 'hello', 'help'];
 
@@ -152,7 +159,6 @@ const CommentAutomationEditor: React.FC<CommentAutomationEditorProps> = ({ accou
       setKeywords(existingAutomation.keywords.join(', '));
       setReplyMessage(existingAutomation.reply.text);
       setCommentReplyText(existingAutomation.commentReplyText || '');
-      // --- NEW: Load data for new features ---
       setFollowerOnly(existingAutomation.followerOnly || false);
       setDelayInMinutes(existingAutomation.delayInMinutes || 0);
     } else {
@@ -214,8 +220,9 @@ const CommentAutomationEditor: React.FC<CommentAutomationEditorProps> = ({ accou
       postCaption: selectedPostCaption,
       triggerType: triggerType,
       keywords: triggerType === 'keyword_match' ? keywords.split(',').map(k => k.trim()).filter(Boolean) : [],
-      followerOnly: followerOnly, // <-- ADDED
-      delayInMinutes: Number(delayInMinutes), // <-- ADDED
+      // If feature is locked, save the default value. Otherwise, save the user's selection.
+      followerOnly: isFollowerCheckLocked ? false : followerOnly,
+      delayInMinutes: isDelayLocked ? 0 : Number(delayInMinutes),
       reply: { text: replyMessage.trim() },
       commentReplyText: commentReplyText.trim(),
     };
@@ -237,8 +244,6 @@ const CommentAutomationEditor: React.FC<CommentAutomationEditorProps> = ({ accou
       setKeywords([...current, suggestion].join(', '));
     }
   };
-
-  
 
   const previewCommentText = triggerType === 'all_comments' ? 'Great post!' : keywords.split(',').filter(Boolean)[0] || 'Hello';
   const inputStyles = "w-full p-3 bg-slate-100 border border-slate-200 rounded-lg focus:ring-2 focus:ring-brand/50 focus:border-brand transition-all";
@@ -300,17 +305,22 @@ const CommentAutomationEditor: React.FC<CommentAutomationEditorProps> = ({ accou
                 </label>
               </div>
               
-              {/* --- NEW FOLLOWER ONLY CHECKBOX --- */}
-              <div className="mt-4 pl-1">
-                <label className="flex items-center space-x-3 cursor-pointer">
+              {/* --- FOLLOWER ONLY CHECKBOX WITH VALIDATION --- */}
+              <div className={`mt-4 pl-1 p-3 rounded-lg ${isFollowerCheckLocked ? 'bg-slate-100' : ''}`}>
+                <label className={`flex items-center space-x-3 ${isFollowerCheckLocked ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
                     <input 
                         type="checkbox"
                         checked={followerOnly}
                         onChange={(e) => setFollowerOnly(e.target.checked)}
-                        className="h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand"
+                        disabled={isFollowerCheckLocked}
+                        className="h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand disabled:opacity-50 disabled:cursor-not-allowed"
                     />
-                    <span className="text-sm text-slate-600 font-medium">Only trigger for followers</span>
+                    <span className={`text-sm font-medium ${isFollowerCheckLocked ? 'text-slate-400' : 'text-slate-600'}`}>Only trigger for followers</span>
+                    {isFollowerCheckLocked && <Lock className="w-4 h-4 ml-2 text-slate-500" />}
                 </label>
+                {isFollowerCheckLocked && (
+                    <p className="text-xs text-brand mt-2 pl-7">Available on the PRO plan. <a href="/subscription" className="font-semibold underline">Upgrade</a></p>
+                )}
               </div>
             </div>
 
@@ -329,13 +339,25 @@ const CommentAutomationEditor: React.FC<CommentAutomationEditorProps> = ({ accou
                         <textarea ref={textareaRef} id="replyMessage" value={replyMessage} onChange={(e) => setReplyMessage(e.target.value)} placeholder="This message will be sent via DM..." rows={4} className={inputStyles} />
                     </div>
                     
-                    {/* --- NEW DELAYED REPLY INPUT --- */}
-                    <div onClick={() => setPreviewMode('dm')} className="cursor-pointer p-2 rounded-md hover:bg-slate-200/50">
+                    {/* --- DELAYED REPLY INPUT WITH VALIDATION --- */}
+                    <div className={`p-2 rounded-md ${isDelayLocked ? 'bg-slate-200/50' : ''}`}>
                         <label htmlFor="delay" className="block text-xs font-medium text-slate-600 mb-1">Delay DM Reply (Optional)</label>
                         <div className="flex items-center">
-                          <input id="delay" type="number" value={delayInMinutes} onChange={(e) => setDelayInMinutes(Number(e.target.value))} className={`${inputStyles} w-28`} min="0" />
+                          <input 
+                            id="delay" 
+                            type="number" 
+                            value={delayInMinutes} 
+                            onChange={(e) => setDelayInMinutes(Number(e.target.value))} 
+                            className={`${inputStyles} w-28 disabled:cursor-not-allowed disabled:bg-slate-200`} 
+                            min="0"
+                            disabled={isDelayLocked}
+                          />
                           <span className="ml-3 text-slate-500 text-sm">minutes</span>
+                          {isDelayLocked && <Lock className="w-4 h-4 ml-3 text-slate-500" />}
                         </div>
+                        {isDelayLocked && (
+                            <p className="text-xs text-brand mt-2">Available on the PRO plan. <a href="/subscription" className="font-semibold underline">Upgrade</a></p>
+                        )}
                     </div>
                 </div>
             </div>

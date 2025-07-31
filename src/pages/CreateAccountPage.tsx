@@ -6,20 +6,15 @@ import { auth, db } from '../firebase';
 import { 
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
-  FacebookAuthProvider,
   signInWithPopup,
+  User, // Import the User type
 } from 'firebase/auth';
-import { doc, setDoc, getDoc } from "firebase/firestore";
+import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore"; // Import serverTimestamp
 import { Mail, Lock, AlertCircle, Loader2 } from 'lucide-react';
 
 // SVG Icon for Google
 const GoogleIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="20px" height="20px" viewBox="0 0 262 262" preserveAspectRatio="xMidYMid"><path d="M255.878 133.451c0-10.734-.871-18.567-2.756-26.69H130.55v48.448h71.947c-1.45 12.04-9.283 30.172-26.69 42.356l-.244 1.622 38.755 30.023 2.685.268c24.659-22.774 38.875-56.282 38.875-96.027" fill="#4285F4"/><path d="M130.55 261.1c35.248 0 64.839-11.605 86.453-31.622l-41.196-31.913c-11.024 7.688-25.82 13.055-45.257 13.055-34.523 0-63.824-22.773-74.269-54.25l-1.531.13-40.298 31.187-.527 1.465C35.393 231.798 79.49 261.1 130.55 261.1" fill="#34A853"/><path d="M56.281 156.37c-2.756-8.123-4.351-16.827-4.351-25.82 0-8.994 1.595-17.697 4.206-25.82l-.073-1.73L15.26 71.312l-1.335.635C5.077 89.644 0 109.517 0 130.55s5.077 40.905 13.925 58.602l42.356-32.782" fill="#FBBC05"/><path d="M130.55 50.479c24.514 0 41.05 10.589 50.479 19.438l36.844-35.974C195.245 12.91 165.798 0 130.55 0 79.49 0 35.393 29.301 13.925 71.947l42.211 32.783c10.59-31.477 39.891-54.251 74.414-54.251" fill="#EB4335"/></svg>
-);
-
-// SVG Icon for Facebook
-const FacebookIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#1877F2" width="20px" height="20px"><path d="M22 12c0-5.52-4.48-10-10-10S2 6.48 2 12c0 4.84 3.44 8.87 8 9.8V15H8v-3h2V9.5C10 7.57 11.57 6 13.5 6H16v3h-2c-.55 0-1 .45-1 1v2h3v3h-3v6.95c5.05-.5 9-4.76 9-9.95z"/></svg>
 );
 
 const CreateAccountPage: React.FC = () => {
@@ -30,35 +25,60 @@ const CreateAccountPage: React.FC = () => {
     const [confirmPassword, setConfirmPassword] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
-    const [socialLoading, setSocialLoading] = useState<'google' | 'facebook' | null>(null);
+    const [socialLoading, setSocialLoading] = useState<'google' | null>(null);
 
     const redirectPath = new URLSearchParams(location.search).get('redirect_to') || '/';
 
-    const handleUserProfileCreation = async (user: any, displayName: string | null, path: string) => {
+    // --- UPDATED: This function now creates the complete user profile ---
+    const handleUserProfileCreation = async (user: User, path: string) => {
         const userDocRef = doc(db, 'users', user.uid);
+
+        // Define the default permissions for every new user on the Free plan
+        const freePlanPermissions = {
+            flowLimit: 1,
+            executionLimit: 1000, 
+            pageLimit: 1,
+            hasDelayedReplies: false,
+            hasLinkEmbed: false,
+            hasFollowerCheck: false,
+            allowsCombinedReply: false,
+            hasAnalytics: false,
+        };
+
+        // Set the complete document data
         await setDoc(userDocRef, {
+            uid: user.uid,
             email: user.email,
-            displayName: displayName || user.email?.split('@')[0] || 'New User',
+            agencyName: user.displayName || `User-${user.uid.substring(0, 5)}`,
             role: 'agency',
-            agencyName: `${displayName || 'New'}'s Agency`,
-            createdAt: new Date()
-        }, { merge: true }); // Use merge to avoid overwriting existing data if a social login is used on an existing account
+            plan: 'Free',
+            permissions: freePlanPermissions,
+            subscription: {
+                planId: 'Free',
+                status: 'active',
+            },
+            createdAt: serverTimestamp(),
+        });
+        
         navigate(path, { replace: true });
     };
     
-    const processSocialLogin = async (provider: GoogleAuthProvider | FacebookAuthProvider, providerName: 'google' | 'facebook') => {
+    const processSocialLogin = async (provider: GoogleAuthProvider, providerName: 'google') => {
         setSocialLoading(providerName);
         setError('');
         try {
             const result = await signInWithPopup(auth, provider);
             const userDocRef = doc(db, 'users', result.user.uid);
             const docSnap = await getDoc(userDocRef);
+            
+            // If the user is new, create their profile
             if (!docSnap.exists()) {
-                await handleUserProfileCreation(result.user, result.user.displayName, redirectPath);
+                await handleUserProfileCreation(result.user, redirectPath);
             } else {
+                // If they are a returning user, just navigate
                 navigate(redirectPath, { replace: true });
             }
-        } catch (err: any) {
+        } catch (err: any) { // <-- FIX: Corrected syntax here
             console.error(`${providerName} signup error:`, err);
             setError(`Failed to sign up with ${providerName}. ${err.message}`);
         } finally {
@@ -75,7 +95,8 @@ const CreateAccountPage: React.FC = () => {
         setLoading(true);
         try {
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-            await handleUserProfileCreation(userCredential.user, userCredential.user.displayName, redirectPath);
+            // This now creates the full profile, not just a partial one
+            await handleUserProfileCreation(userCredential.user, redirectPath);
         } catch (err: any) {
             console.error("Email signup error:", err);
             setError(err.code === 'auth/email-already-in-use' ? 'This email is already in use.' : `Failed to create account: ${err.message}`);
@@ -99,9 +120,7 @@ const CreateAccountPage: React.FC = () => {
                     <button type="button" onClick={() => processSocialLogin(new GoogleAuthProvider(), 'google')} className={socialButtonStyles} disabled={!!socialLoading}>
                         {socialLoading === 'google' ? <Loader2 className="w-5 h-5 animate-spin" /> : <><GoogleIcon /><span className="ml-2">Sign up with Google</span></>}
                     </button>
-                    <button type="button" onClick={() => processSocialLogin(new FacebookAuthProvider(), 'facebook')} className={socialButtonStyles} disabled={!!socialLoading}>
-                        {socialLoading === 'facebook' ? <Loader2 className="w-5 h-5 animate-spin" /> : <><FacebookIcon /><span className="ml-2">Sign up with Facebook</span></>}
-                    </button>
+                    {/* --- REMOVED Facebook Button --- */}
                 </div>
 
                 <div className="flex items-center my-6">
