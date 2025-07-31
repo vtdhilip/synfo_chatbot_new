@@ -55,6 +55,8 @@ const App = () => (
         <Route path="payment/confirm" element={<PaymentConfirmationPage />} />
 
         {/* Settings pages */}
+        <Route path="/subscription" element={<Navigate to="/settings/subscription" replace />} />
+
         <Route path="settings" element={<SettingsLayout />}>
           <Route index element={<Navigate to="profile" replace />} />
           <Route path="profile" element={<ProfileSettingsPage />} />

@@ -13,6 +13,7 @@ interface Permissions {
   hasLinkEmbed: boolean;
   hasFollowerCheck: boolean;
   allowsCombinedReply: boolean;
+  executionLimit:number;
 }
 
 // --- Step 2: Add Permissions to your User Data interface ---

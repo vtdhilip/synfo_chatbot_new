@@ -6,12 +6,15 @@ import { type Account } from '../types';
 import { ArrowLeft, MessageSquare, AtSign, Instagram, Lock, Sparkles, BarChart2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
+// --- INTERFACES FOR ANALYTICS ---
 interface DailyAnalytics {
-  total_comments?: number;
   automated_comments?: number;
-  total_dms?: number;
   automated_dms?: number;
-  total_automations?: number;
+  automated_story_replies?: number;
+}
+
+interface MonthlyAnalytics {
+    total_automations?: number;
 }
 
 // Reusable component for the automation options
@@ -65,10 +68,11 @@ const DashboardPage: React.FC = () => {
   const { accountId } = useParams<{ accountId: string }>();
   const [account, setAccount] = useState<Account | null>(null);
   const [loading, setLoading] = useState(true);
-  // --- FIX: Get permissions directly from the useAuth hook ---
-  const { permissions } = useAuth();
+  // --- MODIFIED: Get both permissions and userData from useAuth ---
+  const { permissions, userData } = useAuth();
   
-  const [analytics, setAnalytics] = useState<DailyAnalytics>({});
+  const [dailyAnalytics, setDailyAnalytics] = useState<DailyAnalytics>({});
+  const [monthlyAnalytics, setMonthlyAnalytics] = useState<MonthlyAnalytics>({});
   const isMounted = useRef(true);
 
   useEffect(() => {
@@ -87,23 +91,44 @@ const DashboardPage: React.FC = () => {
       }
     });
 
-    // --- This correctly fetches TODAY's analytics ---
     const today = new Date();
-    const dateString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    const analyticsRef = doc(db, `analytics/${accountId}/daily/${dateString}`);
-    const unsubscribeAnalytics = onSnapshot(analyticsRef, (docSnap: DocumentSnapshot) => {
-      if (isMounted.current) setAnalytics(docSnap.data() as DailyAnalytics || {});
+    const dailyDateString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const monthlyDateString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    
+    const dailyAnalyticsRef = doc(db, `analytics/${accountId}/daily/${dailyDateString}`);
+    const monthlyAnalyticsRef = doc(db, `analytics/${accountId}/monthly/${monthlyDateString}`);
+
+    const unsubscribeDaily = onSnapshot(dailyAnalyticsRef, (docSnap: DocumentSnapshot) => {
+      if (isMounted.current) setDailyAnalytics(docSnap.data() as DailyAnalytics || {});
+    });
+
+    const unsubscribeMonthly = onSnapshot(monthlyAnalyticsRef, (docSnap: DocumentSnapshot) => {
+        if (isMounted.current) setMonthlyAnalytics(docSnap.data() as MonthlyAnalytics || {});
     });
 
     return () => {
       unsubscribeAccount();
-      unsubscribeAnalytics();
+      unsubscribeDaily();
+      unsubscribeMonthly();
       isMounted.current = false;
     };
   }, [accountId]);
 
-  const automationLimit = permissions?.flowLimit || 0;
-  const totalAutomationsToday = analytics.total_automations || 0;
+  // --- MODIFIED: More robust execution limit logic ---
+  let executionLimit: number | 'unlimited' = (permissions as any)?.executionLimit;
+
+  // If the user is on the free plan, the limit MUST be 1000.
+  // This overrides any incorrect "unlimited" string from the DB for free users.
+  if (userData?.plan === 'free') {
+      executionLimit = 1000;
+  }
+
+  // If the limit is not a number after the checks, it's unlimited.
+  if (typeof executionLimit !== 'number') {
+      executionLimit = 'unlimited';
+  }
+  
+  const totalMonthlyExecutions = monthlyAnalytics.total_automations || 0;
 
   if (loading) {
     return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-500">Loading Dashboard...</div>;
@@ -136,38 +161,42 @@ const DashboardPage: React.FC = () => {
                             <Instagram className="w-6 h-6" />
                         </div>
                         <div className="ml-4">
-                            <h2 className="text-xl font-bold text-slate-800">Today's Automated Activity</h2>
+                            <h2 className="text-xl font-bold text-slate-800">Performance Overview</h2>
                             <p className="text-sm text-slate-500">
                                 Summary for {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}.
                             </p>
                         </div>
                     </div>
-                    {/* --- NEW ANALYTICS BUTTON --- */}
                     <Link 
                         to={`/analytics/${accountId}`} 
-                        className={`mt-4 sm:mt-0 px-4 py-2 inline-flex items-center bg-white text-slate-700 text-sm font-semibold border border-slate-300 rounded-lg transition-colors 
-                                    `}
-                       
+                        className="mt-4 sm:mt-0 px-4 py-2 inline-flex items-center bg-white text-slate-700 text-sm font-semibold border border-slate-300 rounded-lg transition-colors hover:bg-slate-50"
                     >
                         <BarChart2 className="w-4 h-4 mr-2" />
-                        View Analytics
-                       
+                        View Full Analytics
                     </Link>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 text-center">
                     <div className="p-4">
-                        <p className="text-sm font-medium text-slate-500">Automated Comments</p>
-                        <p className="text-5xl font-bold text-slate-900 mt-2">{(analytics.automated_comments || 0).toLocaleString()}</p>
+                        <p className="text-sm font-medium text-slate-500">Automated DMs (Today)</p>
+                        <p className="text-5xl font-bold text-slate-900 mt-2">{(dailyAnalytics.automated_dms || 0).toLocaleString()}</p>
                     </div>
-                    <div className="p-4 md:border-l md:border-r border-slate-200">
-                        <p className="text-sm font-medium text-slate-500">Automated DMs</p>
-                        <p className="text-5xl font-bold text-slate-900 mt-2">{(analytics.automated_dms || 0).toLocaleString()}</p>
+                    <div className="p-4 sm:border-l border-slate-200">
+                        <p className="text-sm font-medium text-slate-500">Automated Comments (Today)</p>
+                        <p className="text-5xl font-bold text-slate-900 mt-2">{(dailyAnalytics.automated_comments || 0).toLocaleString()}</p>
                     </div>
-                    <div className="p-4">
-                        <p className="text-sm font-medium text-slate-500">Total Executions</p>
-                        <p className="text-5xl font-bold text-slate-900 mt-2">{totalAutomationsToday.toLocaleString()}</p>
+                    <div className="p-4 lg:border-l border-slate-200">
+                        <p className="text-sm font-medium text-slate-500">Automated Stories (Today)</p>
+                        <p className="text-5xl font-bold text-slate-900 mt-2">{(dailyAnalytics.automated_story_replies || 0).toLocaleString()}</p>
+                    </div>
+                    <div className="p-4 sm:border-l border-slate-200">
+                        <p className="text-sm font-medium text-slate-500">Total Monthly Executions</p>
+                        <p className="text-5xl font-bold text-slate-900 mt-2">{totalMonthlyExecutions.toLocaleString()}</p>
+                        {/* --- MODIFIED: Updated JSX to use the new logic --- */}
                         <p className="text-xs text-slate-400 mt-1">
-                          {typeof automationLimit === 'number' ? `of ${automationLimit.toLocaleString()} daily limit` : 'Unlimited'}
+                          {executionLimit === 'unlimited' 
+                            ? 'Unlimited' 
+                            : `of ${executionLimit.toLocaleString()} monthly limit`}
                         </p>
                     </div>
                 </div>
