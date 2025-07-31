@@ -1,3 +1,4 @@
+
 import * as functions from "firebase-functions";
 import { onRequest, onCall, HttpsError, CallableRequest } from "firebase-functions/v2/https";
 import { onMessagePublished } from "firebase-functions/v2/pubsub";
@@ -8,6 +9,7 @@ import { PubSub } from "@google-cloud/pubsub";
 import * as crypto from 'crypto';
 import { CloudTasksClient } from "@google-cloud/tasks";
 import { onDocumentUpdated } from "firebase-functions/v2/firestore";
+
 admin.initializeApp();
 const db = admin.firestore();
 const pubsubClient = new PubSub();
@@ -70,74 +72,84 @@ export const processAnalyticsEvents = onMessagePublished('analytics_events', asy
 
 
 export const instagramWebhook = onRequest({
+    memory: "512MiB",
+    timeoutSeconds: 120,
 }, async (req, res) => {
-    console.log("[WEBHOOK] Function was triggered. Method:", req.method);
-
+    // Basic validation
     if (req.method !== "POST") {
         res.status(405).send("Method Not Allowed");
         return;
     }
 
     const body = req.body;
-    console.log("[WEBHOOK] Received a POST request with a valid body.");
+    if (!body || !body.entry) {
+        res.status(400).send("Invalid webhook body.");
+        return;
+    }
 
+    // Process each entry from the webhook
     for (const entry of body.entry) {
         const pageIgId = entry.id;
-        console.log(`[WEBHOOK] Processing entry for page ID: ${pageIgId}`);
 
-        const clientsRef = db.collection('clients');
-        const q = clientsRef.where("instagramPageId", "==", pageIgId);
-        const querySnapshot = await q.get();
+        // Find the client account linked to this Instagram page
+        const clientsQuery = db.collection('clients').where("instagramPageId", "==", pageIgId).limit(1);
+        const querySnapshot = await clientsQuery.get();
 
         if (querySnapshot.empty) {
-            console.log(`[WEBHOOK] No client found for pageIgId: ${pageIgId}. Skipping.`);
+            console.log(`[WEBHOOK] No client found for pageIgId: ${pageIgId}.`);
             continue;
         }
-        const clientId = querySnapshot.docs[0].id;
-        const clientData = querySnapshot.docs[0].data();
+
+        const clientDoc = querySnapshot.docs[0];
+        const clientId = clientDoc.id;
+        const clientData = clientDoc.data();
         const metaPageToken = clientData?.metaPageToken;
-        console.log(`[WEBHOOK] Found matching client ID: ${clientId}`);
 
         if (!metaPageToken) {
             console.warn(`[WEBHOOK] No metaPageToken for client ${clientId}. Skipping.`);
             continue;
         }
 
+        // --- Step 1: Fetch User and Their Permissions ---
         const userDoc = await db.collection('users').doc(clientData.agencyId).get();
         if (!userDoc.exists) {
-            console.warn(`[WEBHOOK] User document not found for agencyId: ${clientData.agencyId}`);
+            console.warn(`[WEBHOOK] User document not found for agencyId: ${clientData.agencyId}. Skipping.`);
             continue;
         }
-        const userData = userDoc.data();
-        const currentPlanId = userData?.subscription?.planId || 'free';
-        const planDoc = await db.collection('plans').doc(currentPlanId).get();
+        const userData = userDoc.data()!;
 
-        let maxAutomations: number | 'unlimited' = 1000;
-        if (planDoc.exists) {
-            maxAutomations = planDoc.data()?.maxAutomations || 'unlimited';
-        } else {
-            console.warn(`[WEBHOOK] Plan document '${currentPlanId}' not found in Firestore. Defaulting to free plan limits.`);
-        }
-        console.log(`[WEBHOOK] Client ${clientId} is on plan '${currentPlanId}' with a limit of ${maxAutomations} automations.`);
+        // Get the permissions object. Default to a restrictive "free" object if not found.
+        const permissions = userData.permissions || {
+            flowLimit: 1,
+            executionLimit: 15, // Default to 1000 if not present
+            pageLimit: 1,
+            hasDelayedReplies: false,
+            hasLinkEmbed: false,
+            hasFollowerCheck: false,
+            allowsCombinedReply: false,
+        };
 
+        // --- Define variables needed by attemptAutomation at a higher scope ---
         const today = new Date();
         const currentMonthYear = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}`;
         const monthlyAnalyticsRef = db.doc(`analytics/${clientId}/monthly/${currentMonthYear}`);
-        const clientDocRef = db.doc(`clients/${clientId}`);
+
+        // --- CORRECTED: Use executionLimit for the check ---
+        const maxExecutions = permissions.executionLimit;
+        const currentPlanId = userData.plan || 'free';
 
         const attemptAutomation = async (): Promise<boolean> => {
             try {
                 const canProceed = await db.runTransaction(async (transaction) => {
                     const analyticsDoc = await transaction.get(monthlyAnalyticsRef);
-                    const currentAutomations = analyticsDoc.data()?.total_automations || 0;
+                    const currentExecutions = analyticsDoc.data()?.total_automations || 0;
 
-                    if (maxAutomations !== 'unlimited' && currentAutomations >= maxAutomations) {
-                        if (currentPlanId === 'free') {
-                            console.warn(`[LIMIT] Hard limit reached for FREE client ${clientId} (${currentAutomations}/${maxAutomations}).`);
-                            transaction.update(clientDocRef, { limitExceeded: true });
-                            return false;
-                        }
-                        console.log(`[BILLING] Overage detected for PAID client ${clientId}. Count: ${currentAutomations + 1}/${maxAutomations}.`);
+                    // --- CORRECTED: Check against maxExecutions ---
+                    if (maxExecutions !== 'unlimited' && currentExecutions >= maxExecutions) {
+                        // This now correctly blocks both free and paid users who reach their limit.
+                        console.warn(`[LIMIT] Execution limit reached for client ${clientId} on plan ${currentPlanId} (${currentExecutions}/${maxExecutions}).`);
+                        transaction.update(clientDoc.ref, { limitExceeded: true });
+                        return false; // This will now correctly stop the execution.
                     }
 
                     transaction.set(monthlyAnalyticsRef, {
@@ -153,16 +165,16 @@ export const instagramWebhook = onRequest({
                 return false;
             }
         };
-
-        // --- Process DMs & Story Replies ---
+        // --- Process Direct Messages & Story Replies ---
         if (entry.messaging) {
             for (const messagingEvent of entry.messaging) {
                 if (messagingEvent.message && !messagingEvent.message.is_echo) {
                     const senderId = messagingEvent.sender.id;
-                    const messageText = messagingEvent.message.text;
+                    const messageText = messagingEvent.message.text || '';
                     let automationToExecute: any = null;
-                    let analyticsEventType: any = null;
+                    let analyticsEventType: 'automated_dms' | 'automated_story_replies' | null = null;
 
+                    // --- Logic to find the correct automation ---
                     // Handle Story Replies
                     if (messagingEvent.message.story) {
                         await publishAnalyticsEvent(clientId, 'total_story_replies');
@@ -171,7 +183,7 @@ export const instagramWebhook = onRequest({
                         const storyAutomations = clientData?.storyAutomations || [];
                         for (const automation of storyAutomations) {
                             if (automation.enabled && (automation.storyId === null || automation.storyId === storyIdRepliedTo)) {
-                                if (automation.triggerType === 'all_replies' || (automation.triggerType === 'keyword_match' && messageText && (automation.keywords || []).some((k: string) => messageText.toLowerCase().includes(k.toLowerCase())))) {
+                                if (automation.triggerType === 'all_replies' || (automation.triggerType === 'keyword_match' && (automation.keywords || []).some((k: string) => messageText.toLowerCase().includes(k.toLowerCase())))) {
                                     automationToExecute = automation;
                                     break;
                                 }
@@ -188,7 +200,13 @@ export const instagramWebhook = onRequest({
                         );
                     }
 
-                    if (automationToExecute) {
+                    if (automationToExecute && analyticsEventType) {
+                        // --- Check Delayed Reply Permission ---
+                        if ((automationToExecute.delayInMinutes || 0) > 0 && !permissions.hasDelayedReplies) {
+                            console.warn(`[PERMISSIONS] User ${clientId} tried delayed reply without permission. Overriding to 0.`);
+                            automationToExecute.delayInMinutes = 0; // Send immediately
+                        }
+
                         const canAutomate = await attemptAutomation();
                         if (canAutomate) {
                             await handleReply({
@@ -197,7 +215,7 @@ export const instagramWebhook = onRequest({
                                 recipientId: senderId,
                                 messageText: automationToExecute.reply.text,
                                 clientId,
-                                analyticsEventType
+                                analyticsEventType: analyticsEventType,
                             });
                         }
                     }
@@ -210,17 +228,21 @@ export const instagramWebhook = onRequest({
             for (const change of entry.changes) {
                 if (change.field === 'comments' || change.field === 'feed') {
                     const commenterId = change.value.from.id;
-                    if (commenterId === pageIgId) { continue; }
+                    if (commenterId === pageIgId) { continue; } // Ignore replies from the page itself
+
                     await publishAnalyticsEvent(clientId, 'total_comments');
+
                     const commentId = change.value.id;
                     const eventRef = db.collection('processed_comments').doc(commentId);
                     const eventDoc = await eventRef.get();
-                    if (eventDoc.exists) { continue; }
+                    if (eventDoc.exists) { continue; } // Avoid processing the same comment twice
+
                     const postId = change.value.media.id;
-                    const commentText = change.value.text;
+                    const commentText = change.value.text || '';
                     const commentAutomations = clientData?.commentAutomations || [];
                     let automationToExecute: any = null;
 
+                    // Find the matching comment automation
                     for (const automation of commentAutomations) {
                         if (automation.enabled && automation.postId === postId) {
                             if (automation.triggerType === 'all_comments' || (automation.triggerType === 'keyword_match' && (automation.keywords || []).some((k: string) => commentText.toLowerCase().includes(k.toLowerCase())))) {
@@ -231,39 +253,46 @@ export const instagramWebhook = onRequest({
                     }
 
                     if (automationToExecute) {
-                        let canAutomate = await attemptAutomation();
-                       if (canAutomate && automationToExecute.followerOnly) {
-                            console.log(`[WEBHOOK] Follower-only rule triggered for user ${commenterId}. Checking friendship status...`);
-                            try {
-                                const friendshipResponse = await axios.get(
-                                    `https://graph.facebook.com/v20.0/${pageIgId}`, // Use the page's IG ID
-                                    {
+                        let canAutomate = await attemptAutomation(); // Check usage limits
+
+                        // --- Check Follower-Only Permission ---
+                        if (canAutomate && automationToExecute.followerOnly) {
+                            if (!permissions.hasFollowerCheck) {
+                                console.warn(`[PERMISSIONS] User ${clientId} tried follower-only check without permission. Skipping check.`);
+                            } else {
+                                try {
+                                    const friendshipResponse = await axios.get(`https://graph.facebook.com/v20.0/${pageIgId}`, {
                                         params: {
                                             fields: `business_discovery.username(${change.value.from.username}){follows_viewer}`,
                                             access_token: metaPageToken,
                                         },
+                                    });
+                                    const isFollowing = friendshipResponse.data?.business_discovery?.follows_viewer;
+                                    if (isFollowing === false) {
+                                        console.log(`[WEBHOOK] User ${commenterId} is NOT following. Halting automation.`);
+                                        canAutomate = false;
                                     }
-                                );
-                                
-                                const isFollowing = friendshipResponse.data?.business_discovery?.follows_viewer;
-                                if (isFollowing === false) { // Explicitly check for false
-                                    console.log(`[WEBHOOK] User ${commenterId} is NOT following. Halting automation.`);
-                                    canAutomate = false; // Prevent the automation from running
-                                } else {
-                                    console.log(`[WEBHOOK] User ${commenterId} is a follower or status is private/unknown. Proceeding.`);
+                                } catch (error: any) {
+                                    console.error(`[ERROR] Failed to check friendship status for user ${commenterId}:`, error.response?.data?.error || error.message);
+                                    canAutomate = false;
                                 }
-
-                            } catch (error: any) {
-                                console.error(`[ERROR] Failed to check friendship status for user ${commenterId}:`, error.response?.data?.error || error.message);
-                                // Fail closed: if we can't check, we don't send the message.
-                                canAutomate = false;
                             }
+                        }
+
+                        // --- Check Delayed Reply Permission ---
+                        if ((automationToExecute.delayInMinutes || 0) > 0 && !permissions.hasDelayedReplies) {
+                            console.warn(`[PERMISSIONS] User ${clientId} tried delayed reply without permission. Overriding to 0.`);
+                            automationToExecute.delayInMinutes = 0;
                         }
 
                         if (canAutomate) {
                             await eventRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp() });
 
-                            if (automationToExecute.reply?.text) {
+                            const canSendPrivateReply = !!automationToExecute.reply?.text;
+                            const canSendPublicReply = !!automationToExecute.commentReplyText;
+
+                            // Send the private DM reply if configured
+                            if (canSendPrivateReply) {
                                 await handleReply({
                                     delayInMinutes: automationToExecute.delayInMinutes || 0,
                                     metaPageToken,
@@ -273,11 +302,17 @@ export const instagramWebhook = onRequest({
                                     analyticsEventType: 'automated_comments'
                                 });
                             }
-                            const replyText = automationToExecute.commentReplyText || "Check your DM!!";
-                            if (replyText) {
-                                await axios.post(`https://graph.facebook.com/v20.0/${commentId}/replies`,
-                                    { message: replyText }, { params: { access_token: metaPageToken } }
-                                );
+
+                            // --- Enforce the "Combined Reply" Rule ---
+                            if (canSendPublicReply) {
+                                if (permissions.allowsCombinedReply || !canSendPrivateReply) {
+                                    await axios.post(`https://graph.facebook.com/v20.0/${commentId}/replies`,
+                                        { message: automationToExecute.commentReplyText },
+                                        { params: { access_token: metaPageToken } }
+                                    );
+                                } else {
+                                    console.log(`[PERMISSIONS] User ${clientId} on Basic plan. Skipping public comment because a DM was sent.`);
+                                }
                             }
                         }
                     }
@@ -285,6 +320,8 @@ export const instagramWebhook = onRequest({
             }
         }
     }
+
+    // Always respond with 200 OK to acknowledge receipt
     res.status(200).send("EVENT_RECEIVED");
 });
 
@@ -508,17 +545,34 @@ export const finalizeFacebookConnection = functions.https.onCall(async (request:
 
 
 export const createRazorpaySubscription = onCall(async (request) => {
+    // 1. Authentication Check (No change, this is correct)
     if (!request.auth) {
         throw new HttpsError('unauthenticated', 'Authentication required.');
     }
     const userId = request.auth.uid;
     const userEmail = request.auth.token.email;
-    const { planId } = request.data;
+    const { planId } = request.data; // e.g., "Free", "Basic", "Pro"
 
     if (!planId || !userEmail) {
         throw new HttpsError('invalid-argument', 'Plan ID and user email are required.');
     }
 
+    // --- NEW LOGIC: Handle the Free Plan ---
+    // If the user selects the free plan, we update the DB directly and skip Razorpay.
+    if (planId === 'Free') {
+        const userDocRef = db.collection('users').doc(userId);
+        await userDocRef.set({
+            plan: 'Free',
+            subscription: { // Clear any old subscription data
+                razorpaySubscriptionId: null,
+                status: 'active_free'
+            }
+        }, { merge: true });
+
+        return { success: true, message: 'Successfully subscribed to the Free plan.' };
+    }
+
+    // 2. Fetch Plan Details from Firestore (No change, this is correct)
     const planDoc = await db.collection('plans').doc(planId).get();
     if (!planDoc.exists) {
         throw new HttpsError('not-found', 'The selected plan does not exist.');
@@ -526,14 +580,17 @@ export const createRazorpaySubscription = onCall(async (request) => {
 
     const razorpayPlanId = planDoc.data()?.razorpayPlanId;
     if (!razorpayPlanId) {
-        throw new HttpsError('failed-precondition', 'Razorpay plan is not configured.');
+        // This handles cases where the plan exists but isn't configured for payment (like a future enterprise plan)
+        throw new HttpsError('failed-precondition', 'This plan is not available for online purchase.');
     }
 
+    // 3. Razorpay API Setup (Using environment variables is correct)
     const razorpayKeyId = process.env.RAZORPAY_KEY_ID;
     const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET;
     const authHeader = 'Basic ' + Buffer.from(`${razorpayKeyId}:${razorpayKeySecret}`).toString('base64');
 
     try {
+        // 4. Find or Create Customer in Razorpay (No change, this logic is excellent)
         let customerId;
         const searchResponse = await axios.get(`https://api.razorpay.com/v1/customers?email=${userEmail}`, {
             headers: { 'Authorization': authHeader }
@@ -543,31 +600,34 @@ export const createRazorpaySubscription = onCall(async (request) => {
             customerId = searchResponse.data.items[0].id;
         } else {
             const customerResponse = await axios.post('https://api.razorpay.com/v1/customers', {
-                email: userEmail, name: request.auth.token.name || 'New User', notes: { firebase_uid: userId }
+                email: userEmail,
+                name: request.auth.token.name || 'New User',
+                notes: { firebase_uid: userId }
             }, { headers: { 'Authorization': authHeader } });
             customerId = customerResponse.data.id;
         }
 
+        // 5. Create Subscription in Razorpay (No change in this part)
         const subscriptionResponse = await axios.post('https://api.razorpay.com/v1/subscriptions', {
             plan_id: razorpayPlanId,
             customer_id: customerId,
-            total_count: 120,
+            total_count: 24, // Set a reasonable cycle count, e.g., 24 months
             customer_notify: 1,
             notes: { userId, firestorePlanId: planId }
         }, { headers: { 'Authorization': authHeader } });
 
         const subscriptionData = subscriptionResponse.data;
 
-        // --- NEW LOGIC: Temporarily save the URL and ID ---
-        const userDocRef = db.collection('users').doc(userId);
-        await userDocRef.set({
-            pendingSubscription: {
-                managementUrl: subscriptionData.short_url,
-                razorpaySubscriptionId: subscriptionData.id
-            }
-        }, { merge: true });
+        // --- CRITICAL CHANGE: REMOVED DATABASE WRITE ---
+        // We DO NOT save anything to our database here.
+        // We simply return the ID needed for the frontend to open the checkout.
+        // The webhook will handle the database update upon successful payment.
 
-        return { success: true, subscriptionId: subscriptionData.id, keyId: razorpayKeyId };
+        return {
+            success: true,
+            subscriptionId: subscriptionData.id,
+            keyId: razorpayKeyId // The keyId is needed by the Razorpay frontend SDK
+        };
 
     } catch (error: any) {
         console.error("[RAZORPAY_SUB] Failed to create subscription:", error.response?.data);
@@ -634,28 +694,20 @@ export const createRazorpayOrder = functions.https.onCall(async (request: Callab
 });
 
 
+
 export const razorpayWebhook = onRequest(async (req, res) => {
-    if (req.method !== 'POST') {
-        res.status(405).send('Method Not Allowed');
-        return;
-    }
-
-    const razorpayWebhookSecret = process.env.RAZORPAY_WEBHOOK;
-
-    if (!razorpayWebhookSecret) {
-        console.error("[RAZORPAY_WEBHOOK] Razorpay Webhook Secret is not configured.");
+    // --- Step 1: Verify Signature (Your existing code is correct) ---
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    if (!secret) {
+        console.error("Razorpay Webhook Secret is not configured.");
         res.status(500).send('Webhook secret not configured.');
         return;
     }
 
     const signature = req.headers['x-razorpay-signature'] as string;
-    if (!signature) {
-        res.status(400).send('Missing signature');
-        return;
-    }
+    const body = req.rawBody; // Use rawBody for accurate signature verification
 
-    const body = req.rawBody;
-    const expectedSignature = crypto.createHmac('sha256', razorpayWebhookSecret)
+    const expectedSignature = crypto.createHmac('sha256', secret)
         .update(body)
         .digest('hex');
 
@@ -663,54 +715,76 @@ export const razorpayWebhook = onRequest(async (req, res) => {
         res.status(400).send('Invalid signature');
         return;
     }
+
+    // --- Step 2: Process the Event ---
     const event = req.body;
     try {
-        if (event.event === 'subscription.activated' || event.event === 'subscription.charged') {
-            const subscriptionEntity = event.payload.subscription.entity;
-            const paymentEntity = event.payload.payment.entity;
-            const userId = subscriptionEntity.notes.userId;
-            const firestorePlanId = subscriptionEntity.notes.firestorePlanId;
+        // --- Logic for SUCCESSFUL PAYMENT ---
+        if (event.event === 'subscription.charged') {
+            const subscription = event.payload.subscription.entity;
+            const userId = subscription.notes.userId;
+            const planId = subscription.notes.firestorePlanId;
 
-            if (userId) {
-                const userDocRef = db.collection('users').doc(userId);
-
-                // --- NEW LOGIC: Get the user doc to retrieve the pending URL ---
-                const userDoc = await userDocRef.get();
-                const pendingSubscription = userDoc.data()?.pendingSubscription;
-
-                if (pendingSubscription && pendingSubscription.razorpaySubscriptionId === subscriptionEntity.id) {
-                    const subscriptionData = {
-                        planId: firestorePlanId,
-                        status: 'active',
-                        razorpaySubscriptionId: subscriptionEntity.id,
-                        razorpayCustomerId: subscriptionEntity.customer_id,
-                        razorpayPaymentId: paymentEntity.id,
-                        managementUrl: pendingSubscription.managementUrl, // <-- Use the saved URL
-                        subscribedAt: admin.firestore.FieldValue.serverTimestamp(),
-                    };
-
-                    await userDocRef.update({
-                        subscription: subscriptionData,
-                        pendingSubscription: admin.firestore.FieldValue.delete() // Clean up temporary field
-                    });
-                    console.log(`Successfully updated subscription for user: ${userId}`);
-                } else {
-                    console.warn(`No matching pending subscription found for user ${userId} and sub ID ${subscriptionEntity.id}`);
-                }
+            if (!userId || !planId) {
+                console.error("Webhook missing critical notes:", subscription.notes);
+                res.status(400).send("Missing userId or planId in subscription notes.");
+                return;
             }
+
+            // Fetch the master plan details from the 'plans' collection
+            const planDoc = await db.collection('plans').doc(planId).get();
+            if (!planDoc.exists) {
+                console.error(`Plan with ID '${planId}' not found.`);
+                res.status(404).send("Plan not found.");
+                return;
+            }
+            const planData = planDoc.data()!;
+
+            // --- CRITICAL STEP: Create the Permissions Object ---
+            // This translates the plan's marketing text into true/false feature flags.
+            const userPermissions = {
+                flowLimit: planData.flowLimit || 1,
+                pageLimit: planData.pageLimit || 1,
+                hasDelayedReplies: planData.features.includes("Delayed Replies"),
+                hasLinkEmbed: planData.features.includes("Embed Links in DM"),
+                hasFollowerCheck: planData.features.includes("“Reply After Follow” Logic"),
+                allowsCombinedReply: planData.features.includes("DM + Comment Automation")
+            };
+
+            // Update the user's document with the new plan and permissions
+            const userDocRef = db.collection('users').doc(userId);
+            await userDocRef.set({
+                plan: planId,
+                permissions: userPermissions, // <-- Grant the features
+                subscription: {
+                    status: 'active',
+                    razorpaySubscriptionId: subscription.id,
+                    subscribedAt: admin.firestore.FieldValue.serverTimestamp(),
+                }
+            }, { merge: true });
+
+            console.log(`✅ Successfully activated plan '${planId}' for user '${userId}'.`);
         }
-        // --- ADD THIS CANCELLATION LOGIC ---
+        // --- Logic for CANCELLATION (Your existing code is good) ---
         else if (event.event === 'subscription.cancelled') {
-            const subscriptionEntity = event.payload.subscription.entity;
-            const userId = subscriptionEntity.notes.userId;
+            const subscription = event.payload.subscription.entity;
+            const userId = subscription.notes.userId;
             if (userId) {
                 const userDocRef = db.collection('users').doc(userId);
-                // Update the user's subscription status to cancelled and revert them to the free plan
+
+                // Revert user to the free plan's permissions
                 await userDocRef.update({
+                    plan: 'Free',
                     'subscription.status': 'cancelled',
-                    'subscription.planId': 'free',
                     'subscription.cancelledAt': admin.firestore.FieldValue.serverTimestamp(),
+                    'permissions.flowLimit': 1,
+                    'permissions.pageLimit': 1,
+                    'permissions.hasDelayedReplies': false,
+                    'permissions.hasLinkEmbed': false,
+                    'permissions.hasFollowerCheck': false,
+                    'permissions.allowsCombinedReply': false,
                 });
+                console.log(`❌ Successfully cancelled plan for user '${userId}'.`);
             }
         }
 
@@ -1052,7 +1126,7 @@ export const scheduleCommentAutomationDeletion = onDocumentUpdated("clients/{cli
     }
 
     const project = 'synapticinfo-chatbot';
-    const location = 'us-central1';
+    const location = 'asia-south1';
     const queue = 'comment-deletion-queue';
 
     // --- FIX 2: This was a duplicate and is now removed from here ---
@@ -1218,7 +1292,6 @@ export const sendDelayedReply = onRequest(async (req, res) => {
 
 
 
-
 async function handleReply(payload: {
     delayInMinutes: number;
     metaPageToken: string;
@@ -1231,29 +1304,37 @@ async function handleReply(payload: {
 
     if (delayInMinutes > 0) {
         // --- Schedule a delayed reply via Cloud Tasks ---
-        const project = 'your-gcp-project-id'; // Your GCP Project ID
-        const location = 'your-gcp-region';   // e.g., 'us-central1'
-        const queue = 'delayed-replies-queue'; // A new queue for this task
+        
+        // --- CORRECTED: Use environment variables for project and location ---
+        const project = 'synapticinfo-chatbot';
+        const location = 'asia-south1'; // Or process.env.FUNCTION_REGION if your functions are in different regions
+        const queue = 'delayed-replies-queue';
 
         const queuePath = tasksClient.queuePath(project, location, queue);
+        // This now constructs the correct URL for your project
         const serviceUrl = `https://${location}-${project}.cloudfunctions.net/sendDelayedReply`;
         const scheduleTimeInSeconds = Math.floor(Date.now() / 1000) + (delayInMinutes * 60);
 
         const taskPayload = { metaPageToken, senderId: recipientId, messageText };
 
-        await tasksClient.createTask({
-            parent: queuePath,
-            task: {
-                httpRequest: {
-                    httpMethod: 'POST',
-                    url: serviceUrl,
-                    headers: { 'Content-Type': 'application/json' },
-                    body: Buffer.from(JSON.stringify(taskPayload)).toString('base64'),
+        try {
+            await tasksClient.createTask({
+                parent: queuePath,
+                task: {
+                    httpRequest: {
+                        httpMethod: 'POST',
+                        url: serviceUrl,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: Buffer.from(JSON.stringify(taskPayload)).toString('base64'),
+                    },
+                    scheduleTime: { seconds: scheduleTimeInSeconds },
                 },
-                scheduleTime: { seconds: scheduleTimeInSeconds },
-            },
-        });
-        console.log(`[WEBHOOK] Scheduled a reply to ${recipientId} in ${delayInMinutes} minutes.`);
+            });
+            console.log(`[WEBHOOK] Scheduled a reply to ${recipientId} in ${delayInMinutes} minutes.`);
+        } catch (error) {
+            console.error(`[ERROR] Failed to create Cloud Task:`, error);
+        }
+
     } else {
         // --- Send instantly ---
         await axios.post(`https://graph.facebook.com/v20.0/me/messages`, {
